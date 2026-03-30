@@ -28,3 +28,5 @@ spec:
   values:
     watchNamespaces:
       - flink-system
+    webhook:
+      create: false
