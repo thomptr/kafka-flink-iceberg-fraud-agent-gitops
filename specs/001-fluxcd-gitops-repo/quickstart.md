@@ -27,6 +27,8 @@ minikube start \
 
 If the full stack is too heavy for the local machine, keep the same repository
 structure but use Minikube overlays with reduced replicas and lighter defaults.
+Kubeflow is currently deferred from the active `infra-controllers` Minikube bundle
+so the rest of the platform can reconcile first.
 
 ## 1. Validate the Repository Before Bootstrap
 
@@ -137,7 +139,10 @@ Validate the platform at a minimum with:
 - Strimzi and the Kafka cluster resources are healthy
 - Flink Operator is running and ready for a sample job
 - Polaris dashboard or audit output is available
-- Kubeflow and MLflow endpoints reconcile according to the Minikube overlay
+- MLflow endpoints reconcile according to the Minikube overlay
+
+Kubeflow manifests remain in the repository for later activation, but they are not
+part of the active Minikube controller reconciliation path right now.
 
 ## 7. Roll Back a Bad Change
 

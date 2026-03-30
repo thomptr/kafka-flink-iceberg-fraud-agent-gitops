@@ -7,4 +7,3 @@ resources:
   - polaris
   - strimzi
   - flink-operator
-  - kubeflow
