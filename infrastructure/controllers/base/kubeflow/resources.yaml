@@ -209,25 +209,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: kubeflow-admission-webhook
-  namespace: flux-system
-spec:
-  dependsOn:
-    - name: kubeflow-issuer
-    - name: kubeflow-istio-resources
-  interval: 30m
-  path: ./apps/admission-webhook/upstream/overlays/cert-manager
-  prune: true
-  retryInterval: 2m
-  sourceRef:
-    kind: GitRepository
-    name: kubeflow-manifests
-  timeout: 20m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: kubeflow-centraldashboard
   namespace: flux-system
 spec:
@@ -307,7 +288,6 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: kubeflow-admission-webhook
     - name: kubeflow-jupyter-web-app
     - name: kubeflow-profiles
   interval: 30m
