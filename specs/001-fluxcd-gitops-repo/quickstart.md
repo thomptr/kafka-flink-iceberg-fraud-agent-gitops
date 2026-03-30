@@ -27,8 +27,10 @@ minikube start \
 
 If the full stack is too heavy for the local machine, keep the same repository
 structure but use Minikube overlays with reduced replicas and lighter defaults.
-Kubeflow is currently deferred from the active `infra-controllers` Minikube bundle
-so the rest of the platform can reconcile first.
+Kubeflow is enabled as a smaller pinned core install in the
+`infra-controllers` Minikube bundle. Pipelines, KServe, Katib, and Spark
+Operator stay out of the active local path so the Flink-based platform remains
+practical on Minikube.
 
 ## 1. Validate the Repository Before Bootstrap
 
@@ -140,9 +142,7 @@ Validate the platform at a minimum with:
 - Flink Operator is running and ready for a sample job
 - Polaris dashboard or audit output is available
 - MLflow endpoints reconcile according to the Minikube overlay
-
-Kubeflow manifests remain in the repository for later activation, but they are not
-part of the active Minikube controller reconciliation path right now.
+- Kubeflow dashboard and notebook components reconcile from the pinned core set
 
 ## 7. Roll Back a Bad Change
 

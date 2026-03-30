@@ -6,8 +6,299 @@ metadata:
 spec:
   interval: 1h
   ref:
-    branch: master
+    tag: v1.9.1
   url: https://github.com/kubeflow/manifests
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-cert-manager
+  namespace: flux-system
+spec:
+  interval: 30m
+  path: ./common/cert-manager/cert-manager/base
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-issuer
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-cert-manager
+  interval: 30m
+  path: ./common/cert-manager/kubeflow-issuer/base
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-istio-crds
+  namespace: flux-system
+spec:
+  interval: 30m
+  path: ./common/istio-1-22/istio-crds/base
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-istio-namespace
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-istio-crds
+  interval: 30m
+  path: ./common/istio-1-22/istio-namespace/base
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-istio
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-cert-manager
+    - name: kubeflow-istio-crds
+    - name: kubeflow-istio-namespace
+  interval: 30m
+  path: ./common/istio-1-22/istio-install/overlays/oauth2-proxy
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-oauth2-proxy
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-istio
+  interval: 30m
+  path: ./common/oauth2-proxy/overlays/m2m-dex-only
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-dex
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-oauth2-proxy
+  interval: 30m
+  path: ./common/dex/overlays/oauth2-proxy
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-cluster-local-gateway
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-istio
+  interval: 30m
+  path: ./common/istio-1-22/cluster-local-gateway/base
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-namespace
+  namespace: flux-system
+spec:
+  interval: 30m
+  path: ./common/kubeflow-namespace/base
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-roles
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-namespace
+  interval: 30m
+  path: ./common/kubeflow-roles/base
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-istio-resources
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-cluster-local-gateway
+    - name: kubeflow-istio
+    - name: kubeflow-namespace
+    - name: kubeflow-roles
+  interval: 30m
+  path: ./common/istio-1-22/kubeflow-istio-resources/base
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-admission-webhook
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-issuer
+    - name: kubeflow-istio-resources
+  interval: 30m
+  path: ./apps/admission-webhook/upstream/overlays/cert-manager
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-centraldashboard
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-dex
+    - name: kubeflow-istio-resources
+  interval: 30m
+  path: ./apps/centraldashboard/overlays/oauth2-proxy
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-jupyter-web-app
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-istio-resources
+  interval: 30m
+  path: ./apps/jupyter/jupyter-web-app/upstream/overlays/istio
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-notebook-controller
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-istio-resources
+  interval: 30m
+  path: ./apps/jupyter/notebook-controller/upstream/overlays/kubeflow
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-profiles
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-centraldashboard
+    - name: kubeflow-dex
+    - name: kubeflow-notebook-controller
+  interval: 30m
+  path: ./apps/profiles/upstream/overlays/kubeflow
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -15,11 +306,16 @@ metadata:
   name: kubeflow
   namespace: flux-system
 spec:
+  dependsOn:
+    - name: kubeflow-admission-webhook
+    - name: kubeflow-jupyter-web-app
+    - name: kubeflow-profiles
   interval: 30m
-  path: ./example
+  path: ./common/user-namespace/base
   prune: true
+  retryInterval: 2m
   sourceRef:
     kind: GitRepository
     name: kubeflow-manifests
-  targetNamespace: kubeflow
   timeout: 20m
+  wait: true

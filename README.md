@@ -12,7 +12,7 @@ of Git.
 - Polaris
 - Strimzi Kafka
 - Flink Kubernetes Operator
-- Kubeflow (kept in-repo but deferred from the active Minikube controller bundle)
+- Kubeflow core controllers for the dashboard and notebooks
 - MLflow
 - Prometheus
 - Grafana
@@ -48,8 +48,9 @@ scripts/
 4. Create the required Kubernetes secrets locally in Minikube.
 5. Verify `infra-controllers`, `infra-configs`, and `apps` reconcile in order.
 
-For the local Minikube workflow, Kubeflow is currently deferred from the active
-`infra-controllers` bundle so the rest of the platform can converge first.
+For the local Minikube workflow, Kubeflow is enabled as a pinned core install.
+Heavier add-ons such as Pipelines, KServe, Katib, and Spark Operator remain out
+of the active controller path so the Flink-first platform can stay lighter.
 
 See `docs/runbooks/bootstrap.md` for the operator workflow and
 `docs/runbooks/secret-management.md` for secret handling.
