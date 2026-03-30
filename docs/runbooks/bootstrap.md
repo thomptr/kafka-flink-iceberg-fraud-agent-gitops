@@ -32,16 +32,16 @@ depend on them:
 
 ```bash
 kubectl -n minio create secret generic minio-root-credentials \
-  --from-literal=root-user='<choose-a-local-user>' \
-  --from-literal=root-password='<choose-a-local-password>'
+  --from-literal=rootUser='<choose-a-local-user>' \
+  --from-literal=rootPassword='<choose-a-local-password>'
 
 kubectl -n monitoring create secret generic grafana-admin-credentials \
   --from-literal=admin-user='admin' \
   --from-literal=admin-password='<choose-a-local-password>'
 
 kubectl -n mlflow create secret generic mlflow-artifact-credentials \
-  --from-literal=accessKey='<minio-access-key>' \
-  --from-literal=secretKey='<minio-secret-key>'
+  --from-literal=accessKey='<same-value-as-minio-rootUser>' \
+  --from-literal=secretKey='<same-value-as-minio-rootPassword>'
 ```
 
 ## Reconciliation Order

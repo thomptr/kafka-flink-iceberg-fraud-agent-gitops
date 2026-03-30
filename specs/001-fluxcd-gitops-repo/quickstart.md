@@ -60,8 +60,8 @@ kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f 
 kubectl create namespace mlflow --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n minio create secret generic minio-root-credentials \
-  --from-literal=root-user='<choose-a-local-user>' \
-  --from-literal=root-password='<choose-a-local-password>'
+  --from-literal=rootUser='<choose-a-local-user>' \
+  --from-literal=rootPassword='<choose-a-local-password>'
 
 kubectl -n monitoring create secret generic grafana-admin-credentials \
   --from-literal=admin-user='admin' \
@@ -70,12 +70,12 @@ kubectl -n monitoring create secret generic grafana-admin-credentials \
 # For local development, reuse the MinIO root username/password below so MLflow
 # can authenticate to the same MinIO instance.
 kubectl -n mlflow create secret generic mlflow-artifact-credentials \
-  --from-literal=accessKey='<same-value-as-minio-root-user>' \
-  --from-literal=secretKey='<same-value-as-minio-root-password>'
+  --from-literal=accessKey='<same-value-as-minio-rootUser>' \
+  --from-literal=secretKey='<same-value-as-minio-rootPassword>'
 ```
 
-For example, if `minio-root-credentials` uses `root-user='minioadmin'` and
-`root-password='choose-a-strong-local-password'`, use those same values for
+For example, if `minio-root-credentials` uses `rootUser='minioadmin'` and
+`rootPassword='choose-a-strong-local-password'`, use those same values for
 `mlflow-artifact-credentials`.
 
 If you later want encrypted manifests, SOPS can still be added as an optional
@@ -118,7 +118,7 @@ Confirm that Flux reconciles the environment in the planned order:
 ```bash
 flux get sources git -A
 flux get kustomizations -A
-kubectl get helmreleases -A
+
 ```
 
 Expected progression:
