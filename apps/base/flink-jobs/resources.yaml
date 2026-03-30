@@ -1,0 +1,21 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: sample-fraud-stream
+  namespace: flink-system
+spec:
+  image: flink:1.18
+  flinkVersion: v1_18
+  serviceAccount: default
+  jobManager:
+    resource:
+      memory: 1024m
+      cpu: 1
+  taskManager:
+    resource:
+      memory: 1024m
+      cpu: 1
+  job:
+    jarURI: local:///opt/flink/examples/streaming/TopSpeedWindowing.jar
+    parallelism: 1
+    upgradeMode: stateless

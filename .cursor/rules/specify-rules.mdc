@@ -1,0 +1,35 @@
+---
+description: Project Development Guidelines
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# kafka-flink-iceberg-fraud-agent-gitops Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2026-03-29
+
+## Active Technologies
+
+- Kubernetes YAML manifests using Flux v2 APIs, Helm values, + FluxCD, Kustomize, Helm, Minikube, kubectl, SOPS with age (001-fluxcd-gitops-repo)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+# Add commands for Kubernetes YAML manifests using Flux v2 APIs, Helm values,
+
+## Code Style
+
+Kubernetes YAML manifests using Flux v2 APIs, Helm values,: Follow standard conventions
+
+## Recent Changes
+
+- 001-fluxcd-gitops-repo: Added Kubernetes YAML manifests using Flux v2 APIs, Helm values, + FluxCD, Kustomize, Helm, Minikube, kubectl, SOPS with age
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->

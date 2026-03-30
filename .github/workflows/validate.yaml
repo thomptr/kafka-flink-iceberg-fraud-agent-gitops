@@ -1,0 +1,30 @@
+---
+name: validate
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kustomize
+        run: |
+          INSTALL_KUSTOMIZE_URL="https://raw.githubusercontent.com/"\
+          "kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
+          curl -sSL "$INSTALL_KUSTOMIZE_URL" | bash
+          sudo mv kustomize /usr/local/bin/kustomize
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_URL="https://github.com/yannh/kubeconform/releases/"\
+          "download/v0.6.7/kubeconform-linux-amd64.tar.gz"
+          curl -sSL "$KUBECONFORM_URL" -o kubeconform.tar.gz
+          tar -xzf kubeconform.tar.gz
+          sudo mv kubeconform /usr/local/bin/kubeconform
+      - name: Install yamllint
+        run: pipx install yamllint
+      - name: Render and lint manifests
+        run: make validate

@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-reconciliation-rules
+  namespace: monitoring
+spec:
+  groups:
+    - name: gitops-platform.rules
+      rules:
+        - alert: FluxKustomizationNotReady
+          expr: vector(0)
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Placeholder alert for Flux Kustomization readiness.

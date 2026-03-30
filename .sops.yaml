@@ -1,0 +1,7 @@
+creation_rules:
+  - path_regex: clusters/.*/secrets/.*\.enc\.ya?ml
+    encrypted_regex: '^(data|stringData)$'
+    age: ['REPLACE_WITH_PUBLIC_AGE_RECIPIENT']
+  - path_regex: infrastructure/.*/.*secrets?.*\.enc\.ya?ml
+    encrypted_regex: '^(data|stringData)$'
+    age: ['REPLACE_WITH_PUBLIC_AGE_RECIPIENT']

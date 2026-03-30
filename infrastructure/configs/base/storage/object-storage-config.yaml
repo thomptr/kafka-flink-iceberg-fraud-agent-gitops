@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: object-storage-config
+  namespace: mlflow
+data:
+  artifactBucket: mlflow-artifacts
+  checkpointBucket: flink-checkpoints
+  warehouseBucket: iceberg-warehouse

@@ -1,0 +1,7 @@
+# Shared platform paths require platform-owner review
+* @platform-team
+/clusters/ @platform-team
+/infrastructure/ @platform-team
+/apps/ @platform-team @app-team
+/docs/runbooks/ @platform-team
+/.github/ @platform-team
