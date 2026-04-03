@@ -22,6 +22,14 @@ kubectl -n monitoring create secret generic grafana-admin-credentials \
 kubectl -n mlflow create secret generic mlflow-artifact-credentials \
   --from-literal=accessKey='<same-value-as-minio-rootUser>' \
   --from-literal=secretKey='<same-value-as-minio-rootPassword>'
+
+kubectl create namespace polaris --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n polaris create secret generic polaris-bootstrap-credentials \
+  --from-literal=credentials='POLARIS,root,<choose-a-local-password>'
+
+kubectl -n polaris create secret generic polaris-storage-credentials \
+  --from-literal=awsAccessKeyId='<same-value-as-minio-rootUser>' \
+  --from-literal=awsSecretAccessKey='<same-value-as-minio-rootPassword>'
 ```
 
 ## Optional Future Patterns

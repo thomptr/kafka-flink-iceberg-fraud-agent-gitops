@@ -1,11 +1,11 @@
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
-  name: fairwinds-stable
+  name: apache-polaris
   namespace: flux-system
 spec:
   interval: 1h
-  url: https://charts.fairwinds.com/stable
+  url: https://downloads.apache.org/polaris/helm-chart
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -17,8 +17,30 @@ spec:
   chart:
     spec:
       chart: polaris
-      version: 5.*
+      version: 1.3.0-incubating
       sourceRef:
         kind: HelmRepository
-        name: fairwinds-stable
+        name: apache-polaris
         namespace: flux-system
+  values:
+    replicaCount: 1
+    image:
+      tag: 1.3.0-incubating
+    persistence:
+      type: in-memory
+    realmContext:
+      realms:
+        - POLARIS
+    storage:
+      secret:
+        name: polaris-storage-credentials
+        awsAccessKeyId: awsAccessKeyId
+        awsSecretAccessKey: awsSecretAccessKey
+    extraEnv:
+      - name: POLARIS_BOOTSTRAP_CREDENTIALS
+        valueFrom:
+          secretKeyRef:
+            name: polaris-bootstrap-credentials
+            key: credentials
+      - name: AWS_REGION
+        value: us-east-1

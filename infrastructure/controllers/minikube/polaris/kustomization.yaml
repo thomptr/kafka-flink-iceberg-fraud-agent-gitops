@@ -2,14 +2,3 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base/polaris
-patches:
-  - target:
-      kind: HelmRelease
-      name: polaris
-    patch: |-
-      - op: add
-        path: /spec/values
-        value:
-          dashboard:
-            service:
-              type: NodePort

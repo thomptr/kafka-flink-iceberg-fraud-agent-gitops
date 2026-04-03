@@ -11,6 +11,7 @@ layers reconcile without committing secrets to Git.
 - A local workstation with Docker or another Minikube-supported driver
 - `minikube`, `kubectl`, and `flux` installed
 - `kustomize`, `helm`, `kubeconform`, and `yamllint` installed for local validation
+- `python3` available locally for the optional `PyIceberg` smoke test
 - A public Git hosting repository already created
 
 ## Recommended Minikube Profile
@@ -76,6 +77,19 @@ kubectl -n monitoring create secret generic grafana-admin-credentials \
 kubectl -n mlflow create secret generic mlflow-artifact-credentials \
   --from-literal=accessKey='<same-value-as-minio-rootUser>' \
   --from-literal=secretKey='<same-value-as-minio-rootPassword>'
+
+kubectl create namespace polaris --dry-run=client -o yaml | kubectl apply -f -
+
+# Apache Polaris bootstraps a local root client from this value. The format is:
+# REALM,CLIENT_ID,CLIENT_SECRET
+kubectl -n polaris create secret generic polaris-bootstrap-credentials \
+  --from-literal=credentials='POLARIS,root,<choose-a-local-password>'
+
+# Reuse the MinIO root username/password so Apache Polaris can access the same
+# local MinIO instance for S3-backed catalogs.
+kubectl -n polaris create secret generic polaris-storage-credentials \
+  --from-literal=awsAccessKeyId='<same-value-as-minio-rootUser>' \
+  --from-literal=awsSecretAccessKey='<same-value-as-minio-rootPassword>'
 ```
 
 For example, if `minio-root-credentials` uses `rootUser='minioadmin'` and
@@ -111,6 +125,8 @@ secret material required by the platform:
 - `minio-root-credentials` in the `minio` namespace
 - `grafana-admin-credentials` in the `monitoring` namespace
 - `mlflow-artifact-credentials` in the `mlflow` namespace
+- `polaris-bootstrap-credentials` in the `polaris` namespace
+- `polaris-storage-credentials` in the `polaris` namespace
 
 You can create these locally with `kubectl create secret generic ...` and recreate
 or rotate them whenever needed. They should exist only in the cluster, not in Git.
@@ -140,9 +156,22 @@ Validate the platform at a minimum with:
 - MinIO is reachable inside the cluster
 - Strimzi and the Kafka cluster resources are healthy
 - Flink Operator is running and ready for a sample job
-- Polaris dashboard or audit output is available
+- Apache Polaris catalog works with a simple PyIceberg script.
 - MLflow endpoints reconcile according to the Minikube overlay
 - Kubeflow dashboard and notebook components reconcile from the pinned core set
+
+Optional Apache Polaris smoke test:
+
+```bash
+kubectl -n polaris port-forward svc/polaris 8181:8181
+kubectl -n minio port-forward svc/minio 9000:9000
+
+python3 -m pip install pyiceberg
+
+POLARIS_CLIENT_ID=root \
+POLARIS_CLIENT_SECRET='<same-value-as-polaris-bootstrap-client-secret>' \
+python3 scripts/verify_polaris_pyiceberg.py
+```
 
 ## 7. Roll Back a Bad Change
 

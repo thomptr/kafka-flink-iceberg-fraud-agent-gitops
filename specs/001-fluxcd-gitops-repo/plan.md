@@ -20,7 +20,7 @@ model using encrypted or externally managed secret references.
 Kustomize overlays, Markdown documentation, and Bash helper scripts  
 **Primary Dependencies**: FluxCD, Kustomize, Helm, Minikube, kubectl, SOPS with age
 for encrypted secrets, kubeconform, yamllint, and platform charts/operators for
-MinIO, Polaris, Strimzi Kafka, Flink Kubernetes Operator, Kubeflow, MLflow,
+MinIO, Apache Polaris, Strimzi Kafka, Flink Kubernetes Operator, Kubeflow, MLflow,
 Prometheus, and Grafana  
 **Storage**: Minikube persistent volumes for local state; MinIO as the in-cluster
 object store; encrypted or externally provisioned secrets only  

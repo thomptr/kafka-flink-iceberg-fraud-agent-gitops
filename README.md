@@ -9,7 +9,7 @@ of Git.
 
 - FluxCD
 - MinIO
-- Polaris
+- Apache Polaris catalog
 - Strimzi Kafka
 - Flink Kubernetes Operator
 - Kubeflow core controllers for the dashboard and notebooks
@@ -47,6 +47,7 @@ scripts/
 3. Bootstrap Flux to `clusters/minikube`.
 4. Create the required Kubernetes secrets locally in Minikube.
 5. Verify `infra-controllers`, `infra-configs`, and `apps` reconcile in order.
+6. Port-forward Apache Polaris and MinIO, then run `scripts/verify_polaris_pyiceberg.py`.
 
 For the local Minikube workflow, Kubeflow is enabled as a pinned core install.
 Heavier add-ons such as Pipelines, KServe, Katib, and Spark Operator remain out
