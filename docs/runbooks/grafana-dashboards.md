@@ -16,7 +16,7 @@ This runbook lists Grafana.com dashboards and custom panels used for the Kafka �
 |-----------|--------|--------|
 | Kafka Overview | Search Grafana.com for “Kafka Overview” (Strimzi / JMX exporter variants) | Pick one that matches metrics exposed in your cluster (`kafka_*` or `kafka_server_*`); record the final dashboard UID in this table after import. |
 
-**Final UID (this cluster)**: *TBD after import — fill in after choosing a dashboard.*
+**13684**
 
 ## Iceberg write latency (custom)
 

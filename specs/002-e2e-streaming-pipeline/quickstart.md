@@ -16,11 +16,21 @@ kubectl get pods -n minio
 
 ## 2. Confirm Kafka topic
 
-The `transactions` topic is declared as a Strimzi `KafkaTopic` in `infrastructure/configs/base/kafka/kafka-topic-transactions.yaml`.
+The `transactions` topic is declared as a Strimzi `KafkaTopic` in `infrastructure/configs/base/kafka/kafka-topic-transactions.yaml` and is included from `infrastructure/configs/minikube` (Flux `infra-configs`).
 
 ```bash
 kubectl -n kafka get kafkatopic transactions
 ```
+
+If you see **NotFound**, the `KafkaTopic` custom resource was never applied: Flux may not have reconciled yet, your cluster may be tracking another Git branch, or you are testing before pushing. From the **repository root**, apply configs (or wait for Flux to catch up):
+
+```bash
+kubectl apply -k infrastructure/configs/minikube
+# or, if you use Flux on this clone:
+flux reconcile kustomization infra-configs --with-source
+```
+
+Then confirm again: `kubectl -n kafka get kafkatopic transactions`.
 
 ## 3. Build and load Flink image
 
@@ -64,6 +74,7 @@ Success: **row count increases** over time and **sample values** match produced 
 
 | Symptom | Check |
 |---------|--------|
+| `kafkatopic transactions` NotFound | CR not applied — `kubectl apply -k infrastructure/configs/minikube` or Flux reconcile; ensure `Kafka` `platform-cluster` is Ready and the topic operator is running |
 | Flink job not starting | `kubectl logs -n flink-system deploy/flink-kubernetes-operator`; Flink pod logs |
 | No Iceberg files | S3/MinIO credentials on TM/JM; Polaris catalog URI; Iceberg connector logs |
 | Lag growing | TM CPU/memory; Kafka broker disk; increase parallelism in FlinkDeployment |
