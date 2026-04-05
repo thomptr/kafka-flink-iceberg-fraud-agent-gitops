@@ -1,0 +1,22 @@
+# Scrapes Strimzi Kafka broker pods (JMX Prometheus exporter on tcp-prometheus).
+# Required for Grafana dashboard 24626 and similar Strimzi/JVM dashboards.
+# See docs/runbooks/grafana-dashboards.md
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: strimzi-kafka-brokers
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - kafka
+  selector:
+    matchLabels:
+      strimzi.io/cluster: platform-cluster
+      strimzi.io/kind: Kafka
+  podMetricsEndpoints:
+    - port: tcp-prometheus
+      path: /metrics
+      interval: 30s
