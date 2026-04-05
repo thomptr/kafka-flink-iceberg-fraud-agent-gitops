@@ -22,6 +22,27 @@ spec:
         app.kubernetes.io/name: synthetic-transaction-producer
     spec:
       serviceAccountName: synthetic-transaction-producer
+      # Wait until Strimzi has created the bootstrap Service and something accepts :9092.
+      initContainers:
+        - name: wait-kafka-bootstrap
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              i=0
+              max=120
+              while [ "$i" -lt "$max" ]; do
+                if nc -z -w 2 platform-cluster-kafka-bootstrap 9092; then
+                  echo "Kafka bootstrap reachable"
+                  exit 0
+                fi
+                echo "waiting for platform-cluster-kafka-bootstrap:9092 ($i/$max)..."
+                sleep 3
+                i=$((i+1))
+              done
+              echo "timed out waiting for Kafka bootstrap (is Kafka/Strimzi running?)"
+              exit 1
       containers:
         - name: producer
           image: synthetic-transaction-producer:latest

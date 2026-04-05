@@ -43,14 +43,28 @@ Then apply or wait for Flux: `kubectl apply -k apps/minikube` (or your usual Git
 
 ## Troubleshooting: `Name or service not known` / cannot bootstrap
 
-1. **Bootstrap Service must exist** (Strimzi creates it from the `Kafka` CR):
+If logs still show **`platform-cluster-kafka-bootstrap.kafka.svc.cluster.local`** and **`main.py` line ~48** as a single `await producer.start()`, you are on an **old container image or old Deployment** (current Git uses **`platform-cluster-kafka-bootstrap:9092`**, retries in `main.py`, and an **initContainer** that waits for TCP `:9092`). **Rebuild the image**, `minikube image load`, `kubectl apply -k apps/minikube`, then `kubectl -n kafka rollout restart deployment/synthetic-transaction-producer`.
+
+1. **Bootstrap Service must exist** (Strimzi creates `platform-cluster-kafka-bootstrap` only after the `Kafka` CR reconciles).
 
    ```bash
    kubectl get kafka -n kafka
-   kubectl get svc -n kafka platform-cluster-kafka-bootstrap
+   kubectl get svc -n kafka
+   kubectl get pods -n kafka
    ```
 
-   If the Service is missing, fix **Strimzi** / **`Kafka` `platform-cluster`** first; DNS will not resolve until the Service exists.
+   If **`kubectl get svc -n kafka platform-cluster-kafka-bootstrap`** returns **NotFound**, the cluster does not have a working Strimzi Kafka yet. **DNS and the producer cannot succeed** until this Service exists.
+
+   **Apply platform Kafka (same paths Flux uses):**
+
+   ```bash
+   # From repo root — Kafka CR + KafkaTopic live under infrastructure/configs
+   kubectl apply -k infrastructure/configs/minikube
+   ```
+
+   Or with Flux: ensure **`infra-controllers`** (Strimzi operator) and **`infra-configs`** have reconciled, then `flux reconcile kustomization infra-configs --with-source`.
+
+   Then wait until **`kubectl get kafka -n kafka platform-cluster`** shows **Ready** (or at least **Reconciliation** progressing) and **`kubectl get svc -n kafka`** lists **`platform-cluster-kafka-bootstrap`**. If the `Kafka` CR is missing, your Git revision may not be applied yet (push + reconcile, or apply the command above from an up-to-date clone).
 
 2. **Same-namespace address** in `deployment.yaml` is `platform-cluster-kafka-bootstrap:9092`. From another namespace use `platform-cluster-kafka-bootstrap.kafka:9092` or the full `*.svc.cluster.local` name.
 
