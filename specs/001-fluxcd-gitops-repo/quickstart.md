@@ -183,6 +183,10 @@ If table creation returns **500** with a Polaris error mentioning `SdkClientExce
 
 The default warehouse is `s3://iceberg-warehouse/...`; that bucket must exist in MinIO. The script uses **boto3** to create it automatically when using static `POLARIS_S3_*` credentials (`POLARIS_ENSURE_S3_BUCKET=1` by default). To create the bucket yourself instead, use e.g. `mc mb minio/iceberg-warehouse` and set `POLARIS_ENSURE_S3_BUCKET=0`.
 
+## Streaming pipeline (Kafka → Flink → Iceberg)
+
+After Flux and the platform secrets above are in place, validate the synthetic producer, Flink SQL job, and Iceberg writes using `specs/002-e2e-streaming-pipeline/quickstart.md`.
+
 ## 7. Roll Back a Bad Change
 
 To restore the previous approved state:

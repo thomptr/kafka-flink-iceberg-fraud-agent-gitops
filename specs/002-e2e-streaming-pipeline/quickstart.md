@@ -1,0 +1,69 @@
+# Quickstart: Validate Kafka → Flink → Iceberg (Polaris) pipeline
+
+**Feature**: `002-e2e-streaming-pipeline`  
+**Date**: 2026-04-04
+
+Prerequisites: Minikube cluster bootstrapped per `specs/001-fluxcd-gitops-repo/quickstart.md` (Flux, Strimzi Kafka, Flink Operator, Polaris, MinIO, secrets applied). Create `minio-flink-s3-credentials` in `flink-system` as documented in `docs/runbooks/bootstrap.md`.
+
+## 1. Confirm platform components
+
+```bash
+kubectl get kafka -n kafka
+kubectl get flinkdeployment -n flink-system
+kubectl get pods -n polaris
+kubectl get pods -n minio
+```
+
+## 2. Confirm Kafka topic
+
+The `transactions` topic is declared as a Strimzi `KafkaTopic` in `infrastructure/configs/base/kafka/kafka-topic-transactions.yaml`.
+
+```bash
+kubectl -n kafka get kafkatopic transactions
+```
+
+## 3. Build and load Flink image
+
+Stay in the **repository root** for `docker build` (the final `.` is the build context). Running `docker build` from `apps/base/flink-jobs` will fail: the Dockerfile copies `jobs/...` and `apps/...` paths that only exist when the context is the repo root.
+
+After `mvn -DskipTests package` in `jobs/flink-sql-runner`:
+
+```bash
+docker build -f apps/base/flink-jobs/Dockerfile -t flink-sql-runner:1.18 .
+minikube image load flink-sql-runner:1.18
+```
+
+Load the synthetic producer image the same way if you build locally (`synthetic-transaction-producer:latest`).
+
+## 4. Confirm Flink job
+
+```bash
+kubectl -n flink-system get flinkdeployment sample-fraud-stream -o wide
+```
+
+Job should reach **RUNNING** with **RUNNING** job status in Flink UI or operator status. Align `flink_streaming_job.sql` Polaris `credential` with your `polaris-bootstrap-credentials` password (replace the `changeme` placeholder in-cluster via ConfigMap edit or GitOps patch — do not commit real passwords).
+
+## 5. Produce test events
+
+Deploy the synthetic producer via `apps/minikube` (Flux or `kubectl apply -k apps/minikube`). Alternatively use `kubectl run` + `kafka-console-producer` with a payload matching `contracts/kafka-transaction-event.md`.
+
+## 6. Verify Iceberg data
+
+- **Option A**: Use existing **`scripts/verify_polaris_pyiceberg.py`** patterns with read-only scan against the target table (after catalog/table exist).  
+- **Option B**: Query via Spark/Flink SQL client if added later.
+
+Success: **row count increases** over time and **sample values** match produced events (modulo feature columns).
+
+## 7. Observe health
+
+- **Kafka**: consumer lag for Flink consumer group.  
+- **Flink**: checkpoints completed, `uptime`, no restarts in loop.  
+- **Polaris / MinIO**: no 5xx on catalog; bucket objects growing.
+
+## 8. Troubleshooting pointers
+
+| Symptom | Check |
+|---------|--------|
+| Flink job not starting | `kubectl logs -n flink-system deploy/flink-kubernetes-operator`; Flink pod logs |
+| No Iceberg files | S3/MinIO credentials on TM/JM; Polaris catalog URI; Iceberg connector logs |
+| Lag growing | TM CPU/memory; Kafka broker disk; increase parallelism in FlinkDeployment |

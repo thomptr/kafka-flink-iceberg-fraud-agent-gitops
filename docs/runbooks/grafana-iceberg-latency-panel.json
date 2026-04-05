@@ -1,0 +1,33 @@
+{
+  "title": "Iceberg / checkpoint health (placeholder)",
+  "type": "row",
+  "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+  "collapsed": false,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Checkpoint duration (proxy for write pressure)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "flink_jobmanager_lastCheckpointDuration",
+          "legendFormat": "lastCheckpointDuration"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Replace with Iceberg commit metric when available",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(flink_taskmanager_job_task_operator_numRecordsInPerSecond[5m])",
+          "legendFormat": "records in (example)"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 }
+    }
+  ]
+}

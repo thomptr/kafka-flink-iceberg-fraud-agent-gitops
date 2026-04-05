@@ -6,9 +6,12 @@ alwaysApply: true
 
 # kafka-flink-iceberg-fraud-agent-gitops Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-29
+Auto-generated from all feature plans. Last updated: 2026-04-04
 
 ## Active Technologies
+- Minikube persistent volumes for local state; MinIO as the in-cluster (001-fluxcd-gitops-repo)
+- Java 11+ or Java 17 (aligned with Flink 1.18 image baseline) for the streaming job; Kubernetes YAML (FlinkDeployment, KafkaTopic, secrets, Kustomize patches); optional Bash/Python for synthetic producers and smoke tests + Apache Flink 1.18, Flink Kubernetes Operator (existing HelmRelease), Strimzi Kafka operator and `Kafka` CR, `flink-connector-kafka`, Iceberg Flink runtime + `flink-connector-files` / Iceberg sink for Polaris REST catalog, Apache Polaris (in-cluster), MinIO S3 API (002-e2e-streaming-pipeline)
+- Iceberg tables on MinIO (`s3://…` warehouse paths); Kafka topics for input (and optionally DLQ); Flink checkpoints to compatible filesystem (config TBD in implementation—often S3/MinIO or cluster FS) (002-e2e-streaming-pipeline)
 
 - Kubernetes YAML manifests using Flux v2 APIs, Helm values, + FluxCD, Kustomize, Helm, Minikube, kubectl, SOPS with age (001-fluxcd-gitops-repo)
 
@@ -28,8 +31,10 @@ tests/
 Kubernetes YAML manifests using Flux v2 APIs, Helm values,: Follow standard conventions
 
 ## Recent Changes
-
+- 002-e2e-streaming-pipeline: Added Java 11+ or Java 17 (aligned with Flink 1.18 image baseline) for the streaming job; Kubernetes YAML (FlinkDeployment, KafkaTopic, secrets, Kustomize patches); optional Bash/Python for synthetic producers and smoke tests + Apache Flink 1.18, Flink Kubernetes Operator (existing HelmRelease), Strimzi Kafka operator and `Kafka` CR, `flink-connector-kafka`, Iceberg Flink runtime + `flink-connector-files` / Iceberg sink for Polaris REST catalog, Apache Polaris (in-cluster), MinIO S3 API
 - 001-fluxcd-gitops-repo: Added Kubernetes YAML manifests using Flux v2 APIs, Helm values, + FluxCD, Kustomize, Helm, Minikube, kubectl, SOPS with age
+- 001-fluxcd-gitops-repo: Added Kubernetes YAML manifests using Flux v2 APIs, Helm values, + FluxCD, Kustomize, Helm, Minikube, kubectl, SOPS with age
+
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

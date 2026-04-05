@@ -50,6 +50,10 @@ kubectl -n polaris create secret generic polaris-bootstrap-credentials \
 kubectl -n polaris create secret generic polaris-storage-credentials \
   --from-literal=awsAccessKeyId='<same-value-as-minio-rootUser>' \
   --from-literal=awsSecretAccessKey='<same-value-as-minio-rootPassword>'
+
+kubectl -n flink-system create secret generic minio-flink-s3-credentials \
+  --from-literal=rootUser='<same-value-as-minio-rootUser>' \
+  --from-literal=rootPassword='<same-value-as-minio-rootPassword>'
 ```
 
 ## Reconciliation Order

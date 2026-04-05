@@ -55,3 +55,6 @@ of the active controller path so the Flink-first platform can stay lighter.
 
 See `docs/runbooks/bootstrap.md` for the operator workflow and
 `docs/runbooks/secret-management.md` for secret handling.
+
+For the Kafka → Flink SQL → Iceberg (Polaris) streaming path on Minikube, use
+`specs/002-e2e-streaming-pipeline/quickstart.md` after Flux and local secrets are applied.

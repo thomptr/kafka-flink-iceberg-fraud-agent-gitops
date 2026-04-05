@@ -15,5 +15,4 @@ smoke:
 	@echo "Run the commands in specs/001-fluxcd-gitops-repo/quickstart.md against a live Minikube cluster."
 
 tree:
-	@printf "clusters/minikube -> infrastructure -> apps
-"
+	@printf '%s\n' 'clusters/minikube -> infrastructure -> apps'

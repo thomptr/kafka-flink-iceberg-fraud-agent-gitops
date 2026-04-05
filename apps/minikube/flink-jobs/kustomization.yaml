@@ -9,12 +9,7 @@ patches:
       namespace: flink-system
     patch: |-
       - op: add
-        path: /spec/podTemplate
+        path: /spec/jobManager/podTemplate/spec/containers/0/env/-
         value:
-          spec:
-            containers:
-              - name: flink-main-container
-                env:
-                  - name: KAFKA_BOOTSTRAP_SERVERS
-                    value: >-
-                      platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+          name: KAFKA_BOOTSTRAP_SERVERS
+          value: platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092

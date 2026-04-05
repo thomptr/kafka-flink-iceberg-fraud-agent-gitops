@@ -1,0 +1,20 @@
+# Scrapes Flink Prometheus reporter on JobManager / TaskManager pods.
+# Requires kube-prometheus-stack PodMonitor discovery (release label below).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: flink-sample-fraud-stream
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - flink-system
+  selector:
+    matchLabels:
+      app: sample-fraud-stream
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+      path: /
