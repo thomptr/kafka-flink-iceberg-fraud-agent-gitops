@@ -12,11 +12,34 @@ Async Kafka producer using **aiokafka** and **faker**. Emits JSON compatible wit
 
 Do **not** commit real cluster secrets or `.env` files with real passwords.
 
-## Local build
+## Build and load into Minikube
+
+The Deployment uses **`synthetic-transaction-producer:latest`** with **`imagePullPolicy: Never`**: Kubernetes will **not** pull from Docker Hub (there is no public image with that name). You must **build** the image and **load** it into the Minikube node’s container runtime.
+
+**Order matters:** apply the **current** `deployment.yaml` (with `imagePullPolicy: Never`) to the cluster **before** relying on local images. If events still show **`Pulling image`** / **`ErrImagePull`**, the live Deployment is an older revision (`IfNotPresent` tries the registry when the image is missing). Push + `flux reconcile`, or from an up-to-date clone run `kubectl apply -k apps/minikube`, then confirm:
 
 ```bash
-docker build -t synthetic-transaction-producer:dev .
+kubectl get deploy -n kafka synthetic-transaction-producer -o jsonpath='{.spec.template.spec.containers[0].imagePullPolicy}'
+# must print: Never
 ```
+
+From the **repository root**:
+
+```bash
+docker build -t synthetic-transaction-producer:latest -f apps/base/synthetic-transaction-producer/Dockerfile apps/base/synthetic-transaction-producer
+minikube image load synthetic-transaction-producer:latest
+```
+
+**Alternative** (build inside Minikube’s Docker so no `image load`):
+
+```bash
+eval $(minikube docker-env)
+docker build -t synthetic-transaction-producer:latest -f apps/base/synthetic-transaction-producer/Dockerfile apps/base/synthetic-transaction-producer
+eval $(minikube docker-env -u)
+kubectl -n kafka rollout restart deployment/synthetic-transaction-producer
+```
+
+Then apply or wait for Flux: `kubectl apply -k apps/minikube` (or your usual GitOps path). If the Deployment already exists, restart after loading: `kubectl -n kafka rollout restart deployment/synthetic-transaction-producer`.
 
 ## Network
 

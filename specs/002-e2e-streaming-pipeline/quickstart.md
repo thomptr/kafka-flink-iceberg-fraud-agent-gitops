@@ -43,7 +43,12 @@ docker build -f apps/base/flink-jobs/Dockerfile -t flink-sql-runner:1.18 .
 minikube image load flink-sql-runner:1.18
 ```
 
-Load the synthetic producer image the same way if you build locally (`synthetic-transaction-producer:latest`).
+Build and load the **synthetic producer** (required — there is no registry image):
+
+```bash
+docker build -t synthetic-transaction-producer:latest -f apps/base/synthetic-transaction-producer/Dockerfile apps/base/synthetic-transaction-producer
+minikube image load synthetic-transaction-producer:latest
+```
 
 ## 4. Confirm Flink job
 
