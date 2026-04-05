@@ -1,8 +1,8 @@
 extends: default
 
 ignore: |
-  clusters/minikube/flux-system/gotk-components.yaml
-  infrastructure/configs/base/kafka/kafka-metrics-configmap.yaml
+  **/gotk-components.yaml
+  **/kafka-metrics-configmap.yaml
 
 rules:
   document-start: disable
