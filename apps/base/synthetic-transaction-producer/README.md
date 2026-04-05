@@ -41,6 +41,21 @@ kubectl -n kafka rollout restart deployment/synthetic-transaction-producer
 
 Then apply or wait for Flux: `kubectl apply -k apps/minikube` (or your usual GitOps path). If the Deployment already exists, restart after loading: `kubectl -n kafka rollout restart deployment/synthetic-transaction-producer`.
 
+## Troubleshooting: `Name or service not known` / cannot bootstrap
+
+1. **Bootstrap Service must exist** (Strimzi creates it from the `Kafka` CR):
+
+   ```bash
+   kubectl get kafka -n kafka
+   kubectl get svc -n kafka platform-cluster-kafka-bootstrap
+   ```
+
+   If the Service is missing, fix **Strimzi** / **`Kafka` `platform-cluster`** first; DNS will not resolve until the Service exists.
+
+2. **Same-namespace address** in `deployment.yaml` is `platform-cluster-kafka-bootstrap:9092`. From another namespace use `platform-cluster-kafka-bootstrap.kafka:9092` or the full `*.svc.cluster.local` name.
+
+3. The producer **retries** bootstrap for several minutes (env `KAFKA_BOOTSTRAP_MAX_ATTEMPTS`, `KAFKA_BOOTSTRAP_RETRY_DELAY_SEC`) so it can outlive slow Kafka reconciliation.
+
 ## Network
 
 The producer must reach Kafka brokers on the cluster network. If you use namespaces, run the Deployment in the same cluster as Kafka (e.g. `kafka`) or ensure DNS/routing to `bootstrap` servers. See `deployment.yaml` for the chosen namespace.

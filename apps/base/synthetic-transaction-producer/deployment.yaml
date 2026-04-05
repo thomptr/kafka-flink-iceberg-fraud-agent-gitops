@@ -28,8 +28,9 @@ spec:
           # Local image only (not on a registry). Build + load into Minikube; see README.
           imagePullPolicy: Never
           env:
+            # Same namespace as Strimzi Kafka — short DNS name (see README if this fails).
             - name: KAFKA_BOOTSTRAP_SERVERS
-              value: platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+              value: platform-cluster-kafka-bootstrap:9092
             - name: KAFKA_TOPIC
               value: transactions
             - name: EVENTS_PER_SEC

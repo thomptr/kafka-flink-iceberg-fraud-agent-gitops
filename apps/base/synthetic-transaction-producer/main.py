@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from aiokafka import AIOKafkaProducer
+from aiokafka.errors import KafkaConnectionError
 from faker import Faker
 
 _fake = Faker()
@@ -39,13 +40,28 @@ async def _run() -> None:
     bootstrap = _env("KAFKA_BOOTSTRAP_SERVERS")
     topic = os.environ.get("KAFKA_TOPIC", "transactions")
     rate = float(os.environ.get("EVENTS_PER_SEC", "10"))
+    brokers = [b.strip() for b in bootstrap.split(",") if b.strip()]
 
     producer = AIOKafkaProducer(
-        bootstrap_servers=bootstrap.split(","),
+        bootstrap_servers=brokers,
         value_serializer=lambda v: json.dumps(v).encode("utf-8"),
         key_serializer=lambda k: str(k).encode("utf-8") if k is not None else None,
     )
-    await producer.start()
+    # Kafka / bootstrap Service may appear after this pod starts (GitOps order, Strimzi reconcile).
+    backoff_sec = float(os.environ.get("KAFKA_BOOTSTRAP_RETRY_DELAY_SEC", "3"))
+    max_attempts = int(os.environ.get("KAFKA_BOOTSTRAP_MAX_ATTEMPTS", "40"))
+    for attempt in range(1, max_attempts + 1):
+        try:
+            await producer.start()
+            break
+        except (KafkaConnectionError, OSError):
+            try:
+                await producer.stop()
+            except Exception:
+                pass
+            if attempt >= max_attempts:
+                raise
+            await asyncio.sleep(backoff_sec)
     try:
         interval = 1.0 / max(rate, 0.1)
         while True:
