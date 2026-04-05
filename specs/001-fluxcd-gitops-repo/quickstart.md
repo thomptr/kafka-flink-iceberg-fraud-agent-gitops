@@ -166,7 +166,7 @@ Optional Apache Polaris smoke test:
 kubectl -n polaris port-forward svc/polaris 8181:8181
 kubectl -n minio port-forward svc/minio 9000:9000
 
-uv pip install pyiceberg pyarrow
+uv pip install pyiceberg pyarrow boto3
 
 POLARIS_CLIENT_ID=root \
 POLARIS_CLIENT_SECRET='<same-value-as-polaris-bootstrap-client-secret>' \
@@ -180,6 +180,8 @@ The script ensures the catalog and namespace, then creates an Iceberg table (`PO
 PyIceberg defaults to requesting vended S3 credentials from Polaris (`X-Iceberg-Access-Delegation: vended-credentials`), which requires extra Polaris grants that the bootstrap `root` user does not have. This script therefore defaults to **static MinIO credentials** via `POLARIS_S3_*` (and clears that header). To use vended credentials instead, set `POLARIS_USE_VENDED_CREDENTIALS=1` and configure Polaris RBAC accordingly.
 
 If table creation returns **500** with a Polaris error mentioning `SdkClientException` and “Unable to load credentials”, the Polaris server process needs MinIO keys on the **default AWS SDK credential chain** as well as the chart’s `polaris.storage.aws.*` mapping. The `infra-controllers` HelmRelease sets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` from `polaris-storage-credentials`; reconcile Flux and restart the Polaris pod (`kubectl rollout restart deployment/polaris -n polaris`) so the pod picks up the env vars.
+
+The default warehouse is `s3://iceberg-warehouse/...`; that bucket must exist in MinIO. The script uses **boto3** to create it automatically when using static `POLARIS_S3_*` credentials (`POLARIS_ENSURE_S3_BUCKET=1` by default). To create the bucket yourself instead, use e.g. `mc mb minio/iceberg-warehouse` and set `POLARIS_ENSURE_S3_BUCKET=0`.
 
 ## 7. Roll Back a Bad Change
 

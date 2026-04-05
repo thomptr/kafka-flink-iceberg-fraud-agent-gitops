@@ -102,6 +102,91 @@ def allowed_location_from_base(default_base_location: str) -> str:
     return f"s3://{bucket}"
 
 
+def warehouse_bucket_name(default_base_location: str) -> str:
+    """First path segment of an s3:// warehouse URI (bucket name)."""
+    if not default_base_location.startswith("s3://"):
+        raise SystemExit("POLARIS_DEFAULT_BASE_LOCATION must start with s3://")
+    return default_base_location[5:].split("/", 1)[0]
+
+
+def _exit_minio_client_error(exc: Exception, endpoint_url: str) -> None:
+    """Turn boto ClientError into a short, actionable message for smoke-test users."""
+    from botocore.exceptions import ClientError
+
+    if not isinstance(exc, ClientError):
+        raise SystemExit(
+            f"Cannot use MinIO at {endpoint_url!r} with the given S3 credentials: {exc}"
+        ) from exc
+    code = exc.response.get("Error", {}).get("Code", "")
+    if code == "InvalidAccessKeyId":
+        raise SystemExit(
+            "MinIO rejected POLARIS_S3_ACCESS_KEY_ID (InvalidAccessKeyId). "
+            "POLARIS_S3_ACCESS_KEY_ID and POLARIS_S3_SECRET_ACCESS_KEY must match MinIO "
+            "`rootUser` and `rootPassword` from secret minio/minio-root-credentials — "
+            "the same values as polaris-storage-credentials (awsAccessKeyId / awsSecretAccessKey). "
+            "They are not the same as POLARIS_CLIENT_SECRET (Polaris OAuth). "
+            f"Endpoint: {endpoint_url!r}."
+        ) from exc
+    raise SystemExit(
+        f"Cannot use MinIO at {endpoint_url!r} with the given S3 credentials: {exc}"
+    ) from exc
+
+
+def ensure_warehouse_bucket(
+    *,
+    default_base_location: str,
+    endpoint_url: str,
+    region: str,
+    access_key_id: str,
+    secret_access_key: str,
+) -> None:
+    """Create the warehouse bucket in MinIO/S3 if it is missing (Polaris needs it to exist)."""
+    try:
+        import boto3
+        from botocore.config import Config
+        from botocore.exceptions import ClientError
+    except ImportError as exc:
+        raise SystemExit(
+            "boto3 is required to create the warehouse bucket automatically. "
+            "Install with: uv pip install boto3 — or create the bucket yourself (e.g. "
+            "`mc mb minio/iceberg-warehouse`) and set POLARIS_ENSURE_S3_BUCKET=0."
+        ) from exc
+
+    bucket = warehouse_bucket_name(default_base_location)
+    # MinIO requires path-style addressing; virtual-hosted requests often return 403 on HeadBucket.
+    s3_config = Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "path"},
+    )
+    client = boto3.client(
+        "s3",
+        endpoint_url=endpoint_url.rstrip("/"),
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=secret_access_key,
+        region_name=region,
+        config=s3_config,
+    )
+    try:
+        listed = client.list_buckets()
+    except ClientError as exc:
+        _exit_minio_client_error(exc, endpoint_url)
+
+    existing = {b["Name"] for b in listed.get("Buckets", [])}
+    if bucket in existing:
+        print(f"[minio] bucket {bucket!r} already exists")
+        return
+
+    try:
+        client.create_bucket(Bucket=bucket)
+        print(f"[minio] created bucket {bucket!r}")
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
+            print(f"[minio] bucket {bucket!r} already exists")
+            return
+        _exit_minio_client_error(exc, endpoint_url)
+
+
 def ensure_catalog(
     management_uri: str,
     token: str,
@@ -216,7 +301,17 @@ def smoke_table(
     )
     print(f"[pyiceberg] created table '{identifier}'")
 
-    rows = pa.table({"id": [42, 7], "msg": ["polaris-smoke", "append-read"]})
+    # PyArrow defaults columns to nullable; Iceberg required fields must match non-nullable Arrow fields.
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("msg", pa.string(), nullable=False),
+        ]
+    )
+    rows = pa.table(
+        {"id": [42, 7], "msg": ["polaris-smoke", "append-read"]},
+        schema=arrow_schema,
+    )
     table.append(rows)
     print(f"[pyiceberg] appended {rows.num_rows} row(s)")
 
@@ -253,6 +348,7 @@ def main() -> int:
     )
     region = getenv("POLARIS_REGION", "us-east-1")
     use_vended_credentials = getenv("POLARIS_USE_VENDED_CREDENTIALS", "0") == "1"
+    ensure_bucket = getenv("POLARIS_ENSURE_S3_BUCKET", "1") == "1"
 
     token = request_token(catalog_uri, client_id, client_secret, scope)
     ensure_catalog(
@@ -264,6 +360,18 @@ def main() -> int:
         minio_internal_endpoint,
         region,
     )
+
+    if ensure_bucket and not use_vended_credentials:
+        access_key = getenv("POLARIS_S3_ACCESS_KEY_ID") or getenv("AWS_ACCESS_KEY_ID")
+        secret_key = getenv("POLARIS_S3_SECRET_ACCESS_KEY") or getenv("AWS_SECRET_ACCESS_KEY")
+        if access_key and secret_key:
+            ensure_warehouse_bucket(
+                default_base_location=default_base_location,
+                endpoint_url=minio_endpoint,
+                region=region,
+                access_key_id=access_key,
+                secret_access_key=secret_key,
+            )
 
     catalog = load_catalog(
         "polaris",
