@@ -26,6 +26,12 @@ spec:
     grafana:
       admin:
         existingSecret: grafana-admin-credentials
+    kubeControllerManager:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    kubeScheduler:
+      enabled: false
     prometheus:
       prometheusSpec:
         retention: 24h

@@ -46,7 +46,7 @@
 
 ## 5. Flink job packaging
 
-**Decision**: Build a **custom Docker image** based on `flink:1.18` (or official Flink image) that **adds** the application fat JAR under `/opt/flink/usrlib` or a known path; `FlinkDeployment` references **`local:///...`** `jarURI` and main class.
+**Decision**: Build a **custom Docker image** based on `flink:1.20.x-java17` (or official Flink image) that **adds** the application fat JAR under `/opt/flink/usrlib` or a known path; `FlinkDeployment` references **`local:///...`** `jarURI` and main class.
 
 **Rationale**: Matches existing `FlinkDeployment` pattern in `apps/base/flink-jobs/resources.yaml`; GitOps-friendly if image tag is versioned.
 

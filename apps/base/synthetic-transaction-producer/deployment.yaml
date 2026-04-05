@@ -13,6 +13,10 @@ metadata:
     app.kubernetes.io/name: synthetic-transaction-producer
 spec:
   replicas: 1
+  # Recreate: terminate old pod(s) before creating new — never overlap (RollingUpdate can still
+  # briefly show two pods when one is stuck Terminating/Error beside the new ReplicaSet).
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: synthetic-transaction-producer
@@ -48,6 +52,9 @@ spec:
           image: synthetic-transaction-producer:latest
           # Local image only (not on a registry). Build + load into Minikube; see README.
           imagePullPolicy: Never
+          ports:
+            - name: control
+              containerPort: 8080
           env:
             # Same namespace as Strimzi Kafka — short DNS name (see README if this fails).
             - name: KAFKA_BOOTSTRAP_SERVERS
@@ -56,6 +63,29 @@ spec:
               value: transactions
             - name: EVENTS_PER_SEC
               value: "20"
+            - name: CONTROL_PORT
+              value: "8080"
+          # Liveness is disabled until startup succeeds (avoids killing the container during slow Kafka connect).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: control
+            failureThreshold: 36
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: control
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: control
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
           resources:
             requests:
               cpu: 50m

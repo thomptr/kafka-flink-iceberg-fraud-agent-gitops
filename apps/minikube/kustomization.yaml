@@ -4,4 +4,4 @@ resources:
   - mlflow
   - flink-jobs
   - kafka-ui
-  - synthetic-transaction-producer
+  # - synthetic-transaction-producer

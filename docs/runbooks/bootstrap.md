@@ -88,6 +88,21 @@ kubectl -n polaris create secret generic polaris-storage-credentials \
 kubectl -n flink-system create secret generic minio-flink-s3-credentials \
   --from-literal=rootUser='<same-value-as-minio-rootUser>' \
   --from-literal=rootPassword='<same-value-as-minio-rootPassword>'
+
+# Flink → Iceberg (Polaris REST): OAuth client must match polaris-bootstrap-credentials (third field = root password).
+kubectl -n flink-system create secret generic polaris-flink-oauth \
+  --from-literal=credential='root:<same-password-as-polaris-bootstrap-credentials>'
+```
+
+**Polaris warehouse for Flink**: Iceberg needs a catalog named **`quickstart_catalog`** (matching `warehouse` in `flink_streaming_job.sql`) and the **MinIO bucket** from the warehouse URI (default **`iceberg-warehouse`** for `s3://iceberg-warehouse/polaris`). If the bucket does not exist, Iceberg returns **S3 404 bucket does not exist**. The **`polaris-ensure-quickstart-catalog`** Job creates the bucket (via boto3 + `polaris-storage-credentials`) before registering the catalog. After `infra-controllers` reconciles, Flux applies that Job. If the job failed (e.g. Polaris not ready), delete it and let Flux recreate it, or run the script locally with port-forward (install **`boto3`** first, or create the bucket manually, e.g. **`mc mb`** against MinIO):
+
+```bash
+# From repo root; uses the same logic as the in-cluster Job (stdlib Python only).
+export POLARIS_BOOTSTRAP_CREDENTIALS="$(kubectl -n polaris get secret polaris-bootstrap-credentials -o jsonpath='{.data.credentials}' | base64 -d)"
+export POLARIS_CATALOG_URI="http://127.0.0.1:8181/api/catalog"
+kubectl -n polaris port-forward svc/polaris 8181:8181
+# In another shell:
+python3 infrastructure/controllers/base/polaris/ensure_polaris_catalog.py
 ```
 
 ## Reconciliation Order
@@ -109,6 +124,19 @@ kubectl -n flink-system create secret generic minio-flink-s3-credentials \
 3. Recreate the Minikube profile or restart it so workloads use the fixed engine: `minikube stop` / `minikube start` with your usual flags.
 
 If you do not need NVIDIA integration on this machine, you can also remove or disable the NVIDIA Container Toolkit until Docker’s default runtime is plain `runc`.
+
+## Troubleshooting: ZooKeeper “Refusing session request” / zxid mismatch (Strimzi)
+
+**Symptom**: ZooKeeper logs show `Authenticated Id 'CN=platform-cluster-kafka,...' for Scheme 'x509'` (normal), then `Refusing session request ... as it has seen zxid ... our last zxid is ... client must try another server`.
+
+**Cause**: The broker’s idea of the ZooKeeper transaction log is **ahead** of what this ZK instance has on disk. That usually happens after **ZooKeeper restarted** or **lost its data** (for example **`ephemeral` storage** in `Kafka` CR) while **Kafka brokers** did not restart together, or after a **node reschedule** that recreated ZK empty.
+
+**What to do now**:
+
+1. Restart Kafka brokers so they open **fresh** sessions: `kubectl -n kafka delete pod -l strimzi.io/name=platform-cluster-kafka` (Strimzi recreates them). If problems persist, restart ZooKeeper pods the same way (`strimzi.io/name=platform-cluster-zookeeper`) and then brokers again.
+2. Confirm the cluster recovers: `kubectl -n kafka get kafka platform-cluster -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'; echo`
+
+**Longer term**: `infrastructure/configs/base/kafka/kafka-cluster.yaml` uses **ephemeral** storage for Kafka and ZooKeeper, so **any** ZK pod restart wipes its data and makes zxid mismatches likely. For a stable dev cluster, use **persistent** `persistent-claim` storage (and accept that changing storage on an existing cluster typically requires deleting the `Kafka` CR and PVCs, then reapplying—Strimzi treats storage as immutable).
 
 ## Success Targets
 

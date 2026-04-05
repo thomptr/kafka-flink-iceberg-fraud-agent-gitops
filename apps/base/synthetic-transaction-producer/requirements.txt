@@ -1,3 +1,4 @@
 # Python 3.11+
+aiohttp>=3.9.0,<4
 aiokafka>=0.10.0,<0.12
 faker>=25.0.0,<36

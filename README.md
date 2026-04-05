@@ -5,6 +5,16 @@ It uses FluxCD to reconcile shared infrastructure and workloads from a single
 source of truth while keeping plaintext secrets, private keys, and passwords out
 of Git.
 
+```sh
+minikube start --profile fraud-gitops \
+  --cpus 8 \
+  --memory 16384 \
+  --disk-size 80g \
+  --driver docker \
+  --container-runtime docker \
+  --gpus all
+```
+
 ## Stack
 
 - FluxCD
@@ -58,3 +68,16 @@ See `docs/runbooks/bootstrap.md` for the operator workflow and
 
 For the Kafka → Flink SQL → Iceberg (Polaris) streaming path on Minikube, use
 `specs/002-e2e-streaming-pipeline/quickstart.md` after Flux and local secrets are applied.
+
+## User interfaces
+
+Flink
+```sh
+kubectl --context=fraud-gitops -n flink-system port-forward svc/sample-fraud-stream-rest 8081:8081
+```
+
+MinIO
+```sh
+kubectl --context=fraud-gitops -n minio port-forward svc/minio-console 9001:9001
+```
+

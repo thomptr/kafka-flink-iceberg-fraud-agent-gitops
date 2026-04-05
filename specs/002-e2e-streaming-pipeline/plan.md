@@ -11,8 +11,8 @@ Deliver a **continuous fraud-analytics pipeline** on the existing GitOps platfor
 
 ## Technical Context
 
-**Language/Version**: Java 17 (aligned with Flink 1.18 image baseline) for the streaming job; Kubernetes YAML (FlinkDeployment, KafkaTopic, secrets, Kustomize patches); optional Bash/Python for synthetic producers and smoke tests  
-**Primary Dependencies**: Apache Flink 1.18, Flink Kubernetes Operator (existing HelmRelease), Strimzi Kafka operator and `Kafka` CR, `flink-connector-kafka`, Iceberg Flink runtime + `flink-connector-files` / Iceberg sink for Polaris REST catalog, Apache Polaris (in-cluster), MinIO S3 API  
+**Language/Version**: Java 17 (aligned with `flink:1.20.x-java17` image) for the streaming job; Kubernetes YAML (FlinkDeployment, KafkaTopic, secrets, Kustomize patches); optional Bash/Python for synthetic producers and smoke tests  
+**Primary Dependencies**: Apache Flink 1.20, Flink Kubernetes Operator (existing HelmRelease), Strimzi Kafka operator and `Kafka` CR, `flink-connector-kafka`, Iceberg Flink runtime + Iceberg sink for Polaris REST catalog, Apache Polaris (in-cluster), MinIO S3 API  
 **Storage**: Iceberg tables on MinIO (`s3://…` warehouse paths); Kafka topics for input (and optionally DLQ); Flink checkpoints to compatible filesystem (config TBD in implementation—often S3/MinIO or cluster FS)  
 **Testing**: `make validate` / kubeconform for manifests; local Minikube integration test: produce sample events → observe Flink checkpoints → query Iceberg via engine of record (e.g. Spark SQL, Trino, or existing PyIceberg smoke patterns)  
 **Target Platform**: Kubernetes (Minikube overlay first), Linux containers  

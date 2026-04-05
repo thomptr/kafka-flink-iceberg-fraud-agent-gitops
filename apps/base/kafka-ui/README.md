@@ -5,6 +5,7 @@ Web UI for the Strimzi Kafka cluster, installed from the [Kafbat Helm chart](htt
 The `kafka-ui` namespace is defined here (`namespace.yaml`) so the **apps** bundle creates it before the `HelmRelease` (same as `infra-configs` `platform-namespaces`, if that has already reconciled). If you see `namespace "kafka-ui" not found`, apply or reconcile **apps** once, or run `kubectl create namespace kafka-ui`.
 
 - **Bootstrap**: `platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092` (plain listener, same as other in-cluster clients).
+- **Kafbat YAML** uses `bootstrap-servers` (see [configuration file](https://ui.docs.kafbat.io/configuration/configuration-file)) and `properties.security.protocol: PLAINTEXT` for Strimzi’s non-TLS `plain` listener. Metrics use **PROMETHEUS** on port **9404** (Strimzi JMX exporter / `tcp-prometheus`), not default JMX RMI.
 - **Minikube**: the overlay sets **NodePort** on the Service; find the port with `kubectl -n kafka-ui get svc`.
 - **Auth**: disabled in `yamlApplicationConfig` for local use; tighten for shared environments per [Kafbat configuration](https://ui.docs.kafbat.io/).
 

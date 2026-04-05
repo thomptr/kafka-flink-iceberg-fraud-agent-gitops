@@ -9,6 +9,7 @@ import random
 import uuid
 from datetime import datetime, timezone
 
+from aiohttp import web
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import KafkaConnectionError
 from faker import Faker
@@ -36,41 +37,125 @@ def _build_record() -> dict:
     }
 
 
+class ProducerState:
+    def __init__(self) -> None:
+        self._paused = False
+        self._lock = asyncio.Lock()
+
+    async def is_paused(self) -> bool:
+        async with self._lock:
+            return self._paused
+
+    async def set_paused(self, value: bool) -> None:
+        async with self._lock:
+            self._paused = value
+
+
+def _auth_ok(request: web.Request) -> bool:
+    token = os.environ.get("CONTROL_API_TOKEN", "").strip()
+    if not token:
+        return True
+    want = f"Bearer {token}"
+    return request.headers.get("Authorization", "") == want
+
+
+def _need_auth_response() -> web.Response:
+    return web.json_response({"error": "unauthorized"}, status=401)
+
+
+async def _handle_health(_request: web.Request) -> web.Response:
+    return web.Response(text="ok")
+
+
+async def _handle_status(request: web.Request) -> web.Response:
+    state: ProducerState = request.app["state"]
+    if not _auth_ok(request):
+        return _need_auth_response()
+    return web.json_response({"paused": await state.is_paused()})
+
+
+async def _handle_pause(request: web.Request) -> web.Response:
+    state: ProducerState = request.app["state"]
+    if not _auth_ok(request):
+        return _need_auth_response()
+    await state.set_paused(True)
+    return web.json_response({"paused": True})
+
+
+async def _handle_resume(request: web.Request) -> web.Response:
+    state: ProducerState = request.app["state"]
+    if not _auth_ok(request):
+        return _need_auth_response()
+    await state.set_paused(False)
+    return web.json_response({"paused": False})
+
+
 async def _run() -> None:
+    state = ProducerState()
     bootstrap = _env("KAFKA_BOOTSTRAP_SERVERS")
     topic = os.environ.get("KAFKA_TOPIC", "transactions")
     rate = float(os.environ.get("EVENTS_PER_SEC", "10"))
+    control_port = int(os.environ.get("CONTROL_PORT", "8080"))
     brokers = [b.strip() for b in bootstrap.split(",") if b.strip()]
 
-    producer = AIOKafkaProducer(
-        bootstrap_servers=brokers,
-        value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-        key_serializer=lambda k: str(k).encode("utf-8") if k is not None else None,
-    )
-    # Kafka / bootstrap Service may appear after this pod starts (GitOps order, Strimzi reconcile).
-    backoff_sec = float(os.environ.get("KAFKA_BOOTSTRAP_RETRY_DELAY_SEC", "3"))
-    max_attempts = int(os.environ.get("KAFKA_BOOTSTRAP_MAX_ATTEMPTS", "40"))
-    for attempt in range(1, max_attempts + 1):
+    app = web.Application()
+    app["state"] = state
+    app.router.add_get("/health", _handle_health)
+    app.router.add_get("/status", _handle_status)
+    app.router.add_post("/pause", _handle_pause)
+    app.router.add_post("/resume", _handle_resume)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", control_port)
+    await site.start()
+
+    # Run Kafka connect + send loop in a background task so the aiohttp server keeps
+    # serving /health while producer.start() retries (otherwise the event loop can stall
+    # and probes see connection refused).
+
+    async def kafka_loop() -> None:
+        producer = AIOKafkaProducer(
+            bootstrap_servers=brokers,
+            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+            key_serializer=lambda k: str(k).encode("utf-8") if k is not None else None,
+        )
+        backoff_sec = float(os.environ.get("KAFKA_BOOTSTRAP_RETRY_DELAY_SEC", "3"))
+        max_attempts = int(os.environ.get("KAFKA_BOOTSTRAP_MAX_ATTEMPTS", "40"))
+        producer_started = False
         try:
-            await producer.start()
-            break
-        except (KafkaConnectionError, OSError):
-            try:
-                await producer.stop()
-            except Exception:
-                pass
-            if attempt >= max_attempts:
-                raise
-            await asyncio.sleep(backoff_sec)
-    try:
-        interval = 1.0 / max(rate, 0.1)
-        while True:
-            rec = _build_record()
-            key = str(rec["user_id"])
-            await producer.send_and_wait(topic, value=rec, key=key)
-            await asyncio.sleep(interval)
-    finally:
-        await producer.stop()
+            for _attempt in range(1, max_attempts + 1):
+                try:
+                    await producer.start()
+                    producer_started = True
+                    break
+                except (KafkaConnectionError, OSError):
+                    try:
+                        await producer.stop()
+                    except Exception:
+                        pass
+                    if _attempt >= max_attempts:
+                        raise
+                    await asyncio.sleep(backoff_sec)
+
+            interval = 1.0 / max(rate, 0.1)
+            while True:
+                if await state.is_paused():
+                    await asyncio.sleep(0.25)
+                    continue
+                rec = _build_record()
+                key = str(rec["user_id"])
+                await producer.send_and_wait(topic, value=rec, key=key)
+                await asyncio.sleep(interval)
+        finally:
+            if producer_started:
+                try:
+                    await producer.stop()
+                except Exception:
+                    pass
+
+    asyncio.create_task(kafka_loop())
+    await asyncio.sleep(float("inf"))
 
 
 def main() -> None:

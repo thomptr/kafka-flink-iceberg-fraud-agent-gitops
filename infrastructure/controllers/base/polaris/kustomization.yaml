@@ -2,3 +2,11 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - resources.yaml
+  - ensure-catalog-job.yaml
+configMapGenerator:
+  - name: ensure-polaris-catalog-script
+    namespace: polaris
+    files:
+      - ensure_polaris_catalog.py=ensure_polaris_catalog.py
+    options:
+      disableNameSuffixHash: true

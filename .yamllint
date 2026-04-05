@@ -1,5 +1,9 @@
 extends: default
 
+ignore: |
+  **/gotk-components.yaml
+  **/kafka-metrics-configmap.yaml
+
 rules:
   document-start: disable
   line-length:

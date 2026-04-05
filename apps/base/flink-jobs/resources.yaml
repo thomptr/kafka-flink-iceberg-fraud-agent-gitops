@@ -52,8 +52,9 @@ metadata:
   name: sample-fraud-stream
   namespace: flink-system
 spec:
-  image: flink-sql-runner:1.18
-  flinkVersion: v1_18
+  # Must match the tag you build and `minikube image load` (same image digest in-cluster).
+  image: flink-sql-runner:1.20.5
+  flinkVersion: v1_20
   serviceAccount: flink
   flinkConfiguration:
     taskmanager.numberOfTaskSlots: "2"
@@ -64,8 +65,10 @@ spec:
     fs.s3a.endpoint: http://minio.minio.svc.cluster.local:9000
     fs.s3a.path.style.access: "true"
     fs.s3a.connection.ssl.enabled: "false"
+    # SimpleAWSCredentialsProvider reads fs.s3a.access.key / secret.key from Hadoop config.
+    # The custom docker-entrypoint wrapper sets FLINK_PROPERTIES from AWS_* (operator often drops FLINK_PROPERTIES env).
     fs.s3a.aws.credentials.provider: org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
-    metrics.reporter.prom.class: org.apache.flink.metrics.prometheus.PrometheusReporter
+    metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
     metrics.reporter.prom.port: "9249"
   jobManager:
     resource:
@@ -89,6 +92,18 @@ spec:
                   secretKeyRef:
                     name: minio-flink-s3-credentials
                     key: rootPassword
+              - name: POLARIS_OAUTH_CREDENTIAL
+                valueFrom:
+                  secretKeyRef:
+                    name: polaris-flink-oauth
+                    key: credential
+                    optional: true
+              - name: POLARIS_BOOTSTRAP_CREDENTIALS
+                valueFrom:
+                  secretKeyRef:
+                    name: polaris-bootstrap-credentials
+                    key: credentials
+                    optional: true
             volumeMounts:
               - name: flink-streaming-sql
                 mountPath: /opt/flink/sql

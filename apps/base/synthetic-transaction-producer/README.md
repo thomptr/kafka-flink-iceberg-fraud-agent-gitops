@@ -9,10 +9,42 @@ Async Kafka producer using **aiokafka** and **faker**. Emits JSON compatible wit
 | `KAFKA_BOOTSTRAP_SERVERS` | yes | Comma-separated brokers (in-cluster DNS). |
 | `KAFKA_TOPIC` | no | Default `transactions`. |
 | `EVENTS_PER_SEC` | no | Throttle (default `10`). |
+| `CONTROL_PORT` | no | HTTP control API port (default `8080`). |
+| `CONTROL_API_TOKEN` | no | If set, `POST /pause`, `POST /resume`, and `GET /status` require header `Authorization: Bearer <token>`. `GET /health` stays open for probes. |
+
+## Pause / resume (HTTP)
+
+The pod serves a small control API on **`CONTROL_PORT`** (default **8080**), started **before** Kafka connects so you can probe it during bootstrap.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Liveness/readiness (`ok`). |
+| `GET` | `/status` | JSON body with boolean `paused`. |
+| `POST` | `/pause` | Stop sending (producer stays connected to Kafka). |
+| `POST` | `/resume` | Resume sending at `EVENTS_PER_SEC`. |
+
+From your machine (replace the pod name if needed):
+
+```bash
+kubectl -n kafka port-forward svc/synthetic-transaction-producer 8080:8080
+curl -sS -X POST http://127.0.0.1:8080/pause
+curl -sS http://127.0.0.1:8080/status
+curl -sS -X POST http://127.0.0.1:8080/resume
+```
+
+With `CONTROL_API_TOKEN` set in the Deployment:
+
+```bash
+curl -sS -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:8080/pause
+```
+
+**Alternative without code:** `kubectl -n kafka scale deployment/synthetic-transaction-producer --replicas=0` to stop the workload entirely (not the same as pause-in-process).
 
 Do **not** commit real cluster secrets or `.env` files with real passwords.
 
 ## Build and load into Minikube
+
+The Deployment uses **`strategy.type: Recreate`** so rollouts never run two producer pods at once (only one replica; there is a short window with zero pods during the switch).
 
 The Deployment uses **`synthetic-transaction-producer:latest`** with **`imagePullPolicy: Never`**: Kubernetes will **not** pull from Docker Hub (there is no public image with that name). You must **build** the image and **load** it into the Minikube node’s container runtime.
 

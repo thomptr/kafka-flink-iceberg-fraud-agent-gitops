@@ -39,9 +39,11 @@ Stay in the **repository root** for `docker build` (the final `.` is the build c
 After `mvn -DskipTests package` in `jobs/flink-sql-runner`:
 
 ```bash
-docker build -f apps/base/flink-jobs/Dockerfile -t flink-sql-runner:1.18 .
-minikube image load flink-sql-runner:1.18
+docker build -f apps/base/flink-jobs/Dockerfile -t flink-sql-runner:1.20 .
+minikube image load flink-sql-runner:1.20
 ```
+
+(Tag must match `FlinkDeployment` `spec.image` in `apps/base/flink-jobs/resources.yaml`.)
 
 Build and load the **synthetic producer** (required — there is no registry image):
 
@@ -62,12 +64,13 @@ Job should reach **RUNNING** with **RUNNING** job status in Flink UI or operator
 
 Deploy the synthetic producer via `apps/minikube` (Flux or `kubectl apply -k apps/minikube`). Alternatively use `kubectl run` + `kafka-console-producer` with a payload matching `contracts/kafka-transaction-event.md`.
 
-## 6. Verify Iceberg data
+## 6. Verify Kafka → Flink → Iceberg end-to-end
 
-- **Option A**: Use existing **`scripts/verify_polaris_pyiceberg.py`** patterns with read-only scan against the target table (after catalog/table exist).  
-- **Option B**: Query via Spark/Flink SQL client if added later.
+Use **`docs/runbooks/verify-kafka-flink-iceberg.md`** for step-by-step checks: topic offsets / consumer lag, Flink job + checkpoints + REST metrics, then a **PyIceberg** read of **`default.transactions`** or MinIO paths under **`iceberg-warehouse`**.
 
-Success: **row count increases** over time and **sample values** match produced events (modulo feature columns).
+**Shortcut:** `scripts/verify_polaris_pyiceberg.py` validates Polaris + MinIO + PyIceberg (smoke table), not the Flink-owned **`transactions`** table — use the runbook’s scan for pipeline verification.
+
+Success: Kafka **offsets move**, Flink job **RUNNING** with **checkpoints completing**, Iceberg table **`default.transactions`** returns **rows** whose columns match the SQL pipeline.
 
 ## 7. Observe health
 

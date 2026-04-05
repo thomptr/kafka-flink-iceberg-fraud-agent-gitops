@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: synthetic-transaction-producer
+  namespace: kafka
+  labels:
+    app.kubernetes.io/name: synthetic-transaction-producer
+spec:
+  selector:
+    app.kubernetes.io/name: synthetic-transaction-producer
+  ports:
+    - name: control
+      port: 8080
+      targetPort: control

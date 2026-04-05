@@ -68,7 +68,7 @@
 
 ### Implementation for User Story 2
 
-- [X] T018 [US2] Add `apps/base/flink-jobs/Dockerfile` (or `jobs/flink-sql-image/Dockerfile`) extending `flink:1.18` with **Iceberg** + **Kafka** SQL connector JARs on the classpath and copy `flink_streaming_job.sql` into the image at a fixed path.
+- [X] T018 [US2] Add `apps/base/flink-jobs/Dockerfile` (or `jobs/flink-sql-image/Dockerfile`) extending `flink:1.20.x-java17` with **Iceberg** + **Kafka** SQL connector JARs on the classpath and copy `flink_streaming_job.sql` into the image at a fixed path.
 - [X] T019 [US2] Replace `apps/base/flink-jobs/resources.yaml` `FlinkDeployment.spec.job.jarURI` / entry strategy with a **SQL execution** strategy compatible with **Flink Kubernetes Operator** 1.14.x in-repo: e.g. `job` spec invoking `sql-client.sh embedded -f /opt/flink/sql/flink_streaming_job.sql`, or **FlinkSessionJob** / operator-supported SQL fields — document chosen pattern in `apps/base/flink-jobs/README.md`.
 - [X] T020 [US2] Patch `apps/minikube/flink-jobs/kustomization.yaml` to set `KAFKA_BOOTSTRAP_SERVERS` and any Polaris/MinIO-related env vars for Minikube overlays.
 - [X] T021 [US2] Register **Flink custom metrics** hook for **Iceberg sink latency** (e.g. `Histogram` around commit / `TwoPhaseCommitSink` callback) in the SQL execution path or via a thin Java wrapper if SQL-only cannot register metrics — if wrapper required, add minimal `jobs/` module and document.

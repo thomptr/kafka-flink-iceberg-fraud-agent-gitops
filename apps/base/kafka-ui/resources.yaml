@@ -35,7 +35,12 @@ spec:
       kafka:
         clusters:
           - name: platform-cluster
-            bootstrapServers: platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+            bootstrap-servers: platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+            properties:
+              security.protocol: PLAINTEXT
+            metrics:
+              type: PROMETHEUS
+              port: 9404
       auth:
         type: disabled
       management:

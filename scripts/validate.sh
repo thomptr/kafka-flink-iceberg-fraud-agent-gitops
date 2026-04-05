@@ -22,7 +22,7 @@ for rel in "${PATHS[@]}"; do
 done
 
 if [[ "$RENDER_ONLY" != "--render-only" ]] && command -v yamllint >/dev/null 2>&1; then
-  yamllint "$REPO_ROOT"
+  (cd "$REPO_ROOT" && yamllint .)
 fi
 
 if [[ "$RENDER_ONLY" != "--render-only" ]] && command -v gitleaks >/dev/null 2>&1; then
