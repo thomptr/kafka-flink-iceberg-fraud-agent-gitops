@@ -11,7 +11,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+try:
+    import pyarrow as pa
+except ImportError as exc:
+    raise SystemExit(
+        "PyArrow is required for the table smoke test. Install with: uv pip install pyarrow"
+    ) from exc
+
 from pyiceberg.catalog import load_catalog
+from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.schema import Schema
+from pyiceberg.types import LongType, NestedField, StringType
 
 
 def getenv(name: str, default: str | None = None, required: bool = False) -> str:
@@ -142,6 +152,88 @@ def ensure_catalog(
     print(f"[polaris] ensured catalog '{catalog_name}'")
 
 
+def rest_catalog_properties(
+    *,
+    region: str,
+    minio_endpoint: str,
+    use_vended_credentials: bool,
+) -> dict[str, str]:
+    """Build PyIceberg REST catalog properties.
+
+    PyIceberg defaults to ``X-Iceberg-Access-Delegation: vended-credentials``, which makes
+    Polaris authorize ``CREATE_TABLE_DIRECT_WITH_WRITE_DELEGATION``. The bootstrap
+    ``root`` principal typically has catalog admin grants but not that delegation op, so
+    table creation returns 403 unless you either grant that privilege in Polaris or
+    disable access delegation and use static MinIO credentials (default for this script).
+    """
+    props: dict[str, str] = {"client.region": region}
+    if not use_vended_credentials:
+        # Override PyIceberg default so Polaris does not require credential-vending grants.
+        props["header.X-Iceberg-Access-Delegation"] = ""
+        access_key = getenv("POLARIS_S3_ACCESS_KEY_ID") or getenv("AWS_ACCESS_KEY_ID")
+        secret_key = getenv("POLARIS_S3_SECRET_ACCESS_KEY") or getenv("AWS_SECRET_ACCESS_KEY")
+        if not access_key or not secret_key:
+            raise SystemExit(
+                "Static S3 credentials are required when POLARIS_USE_VENDED_CREDENTIALS is unset or 0. "
+                "Set POLARIS_S3_ACCESS_KEY_ID and POLARIS_S3_SECRET_ACCESS_KEY (MinIO keys matching "
+                "polaris-storage-credentials), or set POLARIS_USE_VENDED_CREDENTIALS=1 and grant "
+                "Polaris privileges for credential vending / table creation."
+            )
+        props["s3.endpoint"] = minio_endpoint
+        props["s3.access-key-id"] = access_key
+        props["s3.secret-access-key"] = secret_key
+        props["s3.region"] = region
+    return props
+
+
+def smoke_table(
+    catalog,
+    *,
+    namespace_name: str,
+    table_name: str,
+    replace: bool,
+) -> None:
+    """Create an Iceberg table, append rows, and read them back."""
+    identifier = f"{namespace_name}.{table_name}"
+    if catalog.table_exists(identifier):
+        if replace:
+            catalog.drop_table(identifier)
+            print(f"[pyiceberg] dropped existing table '{identifier}'")
+        else:
+            raise SystemExit(
+                f"Table '{identifier}' already exists. "
+                "Set POLARIS_TABLE_REPLACE=1 to drop and recreate, or choose another POLARIS_TABLE_NAME."
+            )
+
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "msg", StringType(), required=True),
+    )
+    table = catalog.create_table(
+        identifier=identifier,
+        schema=schema,
+        partition_spec=PartitionSpec(),
+    )
+    print(f"[pyiceberg] created table '{identifier}'")
+
+    rows = pa.table({"id": [42, 7], "msg": ["polaris-smoke", "append-read"]})
+    table.append(rows)
+    print(f"[pyiceberg] appended {rows.num_rows} row(s)")
+
+    read_back = table.scan().to_arrow()
+    if read_back.num_rows != rows.num_rows:
+        raise SystemExit(
+            f"Row count mismatch: expected {rows.num_rows}, got {read_back.num_rows}"
+        )
+    got = read_back.to_pydict()
+    pairs = sorted(zip(got["id"], got["msg"]))
+    expected = sorted([(42, "polaris-smoke"), (7, "append-read")])
+    if pairs != expected:
+        raise SystemExit(f"Unexpected scan result (sorted by id): {pairs!r} != {expected!r}")
+    print("[pyiceberg] scan result:", got)
+    print("[pyiceberg] full table smoke test (create, append, scan) passed")
+
+
 def main() -> int:
     catalog_uri = getenv("POLARIS_CATALOG_URI", "http://127.0.0.1:8181/api/catalog")
     management_uri = getenv("POLARIS_MANAGEMENT_URI", derive_management_uri(catalog_uri))
@@ -150,6 +242,8 @@ def main() -> int:
     scope = getenv("POLARIS_SCOPE", "PRINCIPAL_ROLE:ALL")
     catalog_name = getenv("POLARIS_CATALOG_NAME", "quickstart_catalog")
     namespace_name = getenv("POLARIS_NAMESPACE", "smoke")
+    table_name = getenv("POLARIS_TABLE_NAME", "smoke_test")
+    table_replace = getenv("POLARIS_TABLE_REPLACE", "1") == "1"
     default_base_location = getenv(
         "POLARIS_DEFAULT_BASE_LOCATION", "s3://iceberg-warehouse/polaris"
     )
@@ -158,6 +252,7 @@ def main() -> int:
         "POLARIS_MINIO_INTERNAL_ENDPOINT", "http://minio.minio.svc.cluster.local:9000"
     )
     region = getenv("POLARIS_REGION", "us-east-1")
+    use_vended_credentials = getenv("POLARIS_USE_VENDED_CREDENTIALS", "0") == "1"
 
     token = request_token(catalog_uri, client_id, client_secret, scope)
     ensure_catalog(
@@ -177,9 +272,11 @@ def main() -> int:
         warehouse=catalog_name,
         scope=scope,
         credential=f"{client_id}:{client_secret}",
-        **{
-            "client.region": region,
-        },
+        **rest_catalog_properties(
+            region=region,
+            minio_endpoint=minio_endpoint,
+            use_vended_credentials=use_vended_credentials,
+        ),
     )
 
     namespaces = {".".join(namespace) for namespace in catalog.list_namespaces()}
@@ -191,6 +288,13 @@ def main() -> int:
 
     namespaces = sorted(".".join(namespace) for namespace in catalog.list_namespaces())
     print("[pyiceberg] visible namespaces:", ", ".join(namespaces) or "(none)")
+
+    smoke_table(
+        catalog,
+        namespace_name=namespace_name,
+        table_name=table_name,
+        replace=table_replace,
+    )
     print("[pyiceberg] Polaris REST catalog smoke test passed")
     return 0
 

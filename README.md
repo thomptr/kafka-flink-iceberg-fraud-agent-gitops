@@ -47,7 +47,7 @@ scripts/
 3. Bootstrap Flux to `clusters/minikube`.
 4. Create the required Kubernetes secrets locally in Minikube.
 5. Verify `infra-controllers`, `infra-configs`, and `apps` reconcile in order.
-6. Port-forward Apache Polaris and MinIO, then run `scripts/verify_polaris_pyiceberg.py`.
+6. Port-forward Apache Polaris and MinIO, then run `scripts/verify_polaris_pyiceberg.py` (install `pyiceberg` and `pyarrow`; set `POLARIS_S3_ACCESS_KEY_ID` / `POLARIS_S3_SECRET_ACCESS_KEY` to MinIO keys unless you enable vended credentials with `POLARIS_USE_VENDED_CREDENTIALS=1`).
 
 For the local Minikube workflow, Kubeflow is enabled as a pinned core install.
 Heavier add-ons such as Pipelines, KServe, Katib, and Spark Operator remain out

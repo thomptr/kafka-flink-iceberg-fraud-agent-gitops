@@ -166,12 +166,20 @@ Optional Apache Polaris smoke test:
 kubectl -n polaris port-forward svc/polaris 8181:8181
 kubectl -n minio port-forward svc/minio 9000:9000
 
-python3 -m pip install pyiceberg
+uv pip install pyiceberg pyarrow
 
 POLARIS_CLIENT_ID=root \
 POLARIS_CLIENT_SECRET='<same-value-as-polaris-bootstrap-client-secret>' \
+POLARIS_S3_ACCESS_KEY_ID='<same-as-polaris-storage-awsAccessKeyId>' \
+POLARIS_S3_SECRET_ACCESS_KEY='<same-as-polaris-storage-awsSecretAccessKey>' \
 python3 scripts/verify_polaris_pyiceberg.py
 ```
+
+The script ensures the catalog and namespace, then creates an Iceberg table (`POLARIS_TABLE_NAME`, default `smoke_test`), appends rows, and scans them back. Set `POLARIS_TABLE_REPLACE=0` to fail if the table already exists instead of dropping it.
+
+PyIceberg defaults to requesting vended S3 credentials from Polaris (`X-Iceberg-Access-Delegation: vended-credentials`), which requires extra Polaris grants that the bootstrap `root` user does not have. This script therefore defaults to **static MinIO credentials** via `POLARIS_S3_*` (and clears that header). To use vended credentials instead, set `POLARIS_USE_VENDED_CREDENTIALS=1` and configure Polaris RBAC accordingly.
+
+If table creation returns **500** with a Polaris error mentioning `SdkClientException` and “Unable to load credentials”, the Polaris server process needs MinIO keys on the **default AWS SDK credential chain** as well as the chart’s `polaris.storage.aws.*` mapping. The `infra-controllers` HelmRelease sets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` from `polaris-storage-credentials`; reconcile Flux and restart the Polaris pod (`kubectl rollout restart deployment/polaris -n polaris`) so the pod picks up the env vars.
 
 ## 7. Roll Back a Bad Change
 
