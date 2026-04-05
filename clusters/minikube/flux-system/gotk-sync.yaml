@@ -8,7 +8,7 @@ metadata:
 spec:
   interval: 1m0s
   ref:
-    branch: main
+    branch: flink_sql_runner_fixes
   secretRef:
     name: flux-system
   url: ssh://git@github.com/thomptr/kafka-flink-iceberg-fraud-agent-gitops

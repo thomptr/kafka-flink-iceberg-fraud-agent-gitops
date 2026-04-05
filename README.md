@@ -15,6 +15,16 @@ minikube start --profile fraud-gitops \
   --gpus all
 ```
 
+```sh
+minikube start --profile fraud-gitops \
+  --cpus 8 \
+  --memory 16384 \
+  --disk-size 80g \
+  --driver docker \
+  --container-runtime docker \
+  --gpus all
+```
+
 ## Stack
 
 - FluxCD
@@ -80,4 +90,10 @@ MinIO
 ```sh
 kubectl --context=fraud-gitops -n minio port-forward svc/minio-console 9001:9001
 ```
+
+KubeFlow
+```sh
+kubectl --context=fraud-gitops -n istio-system port-forward svc/istio-ingressgateway 8085:80
+```
+
 

@@ -1,6 +1,10 @@
 # Tasks: End-to-end streaming pipeline (synthetic Kafka → Flink SQL → Iceberg / Polaris)
 
+<<<<<<< HEAD
 **Input**: Design documents from `/specs/002-e2e-streaming-pipeline/` plus implementation notes: Python synthetic producer (**aiokafka**, **faker**); **Flink SQL** from `apps/base/flink-jobs/flink_streaming_job.sql` in a **Flux-managed** `FlinkDeployment`; **checkpoints to MinIO**; **Prometheus** metrics in Flink spec; **Grafana** imports (**14161** Flink Job Metrics, **Kafka Overview** community dashboard) and **custom Iceberg write latency** panels from Flink metrics.
+=======
+**Input**: Design documents from `/specs/002-e2e-streaming-pipeline/` plus implementation notes: Python synthetic producer (**aiokafka**, **faker**); **Flink SQL** from `apps/base/flink-jobs/flink_streaming_job.sql` in a **Flux-managed** `FlinkDeployment`; **checkpoints to MinIO**; **Prometheus** metrics in Flink spec; **Grafana** imports (**14911** Flink Job Metrics, **Kafka Overview** community dashboard) and **custom Iceberg write latency** panels from Flink metrics.
+>>>>>>> 3fc06d2 (Add synthetic trnasaction data producer.  Create Flink SQL Streaming job and Grafana dashboards)
 
 **Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`
 
@@ -19,7 +23,11 @@
 - [X] T001 Add `apps/base/synthetic-transaction-producer/requirements.txt` pinning `aiokafka` and `faker` (with compatible version ranges) for the async producer.
 - [X] T002 Add `apps/base/synthetic-transaction-producer/Dockerfile` multi-stage or slim image running `python -m synthetic_transaction_producer` (or `main.py`) as non-root.
 - [X] T003 Add `apps/base/synthetic-transaction-producer/README.md` documenting env vars (`KAFKA_BOOTSTRAP_SERVERS`, `TOPIC`, `RATE`, secret refs), local `docker build` / `docker run`, and that secrets are not committed.
+<<<<<<< HEAD
 - [X] T004 [P] Add `docs/runbooks/grafana-dashboards.md` stub listing intended Grafana.com dashboard IDs (Flink **14161**, Kafka Overview TBD after import) and ownership for updates.
+=======
+- [X] T004 [P] Add `docs/runbooks/grafana-dashboards.md` stub listing intended Grafana.com dashboard IDs (Flink **14911**, Kafka Overview TBD after import) and ownership for updates.
+>>>>>>> 3fc06d2 (Add synthetic trnasaction data producer.  Create Flink SQL Streaming job and Grafana dashboards)
 - [X] T005 [P] Update root `README.md` with one paragraph linking to `specs/002-e2e-streaming-pipeline/quickstart.md` for the streaming pipeline validation path.
 
 ---
@@ -96,7 +104,11 @@
 
 ## Phase 6: User Story 4 — Prometheus metrics & Grafana (Priority: P3)
 
+<<<<<<< HEAD
 **Goal**: **Prometheus** scrapes Flink; **Grafana** shows Flink **14161**, Kafka overview, and **Iceberg write latency** panels.
+=======
+**Goal**: **Prometheus** scrapes Flink; **Grafana** shows Flink **14911**, Kafka overview, and **Iceberg write latency** panels.
+>>>>>>> 3fc06d2 (Add synthetic trnasaction data producer.  Create Flink SQL Streaming job and Grafana dashboards)
 
 **Independent Test**: Prometheus targets `UP` for Flink metrics port; Grafana dashboards render; custom panel queries Iceberg latency metric from T021–T022.
 
@@ -104,7 +116,11 @@
 
 - [X] T026 [US4] Add `FlinkDeployment.spec.flinkConfiguration` entries enabling **PrometheusReporter** (e.g. `metrics.reporter.prom.class`, `metrics.reporter.prom.port`) and matching **container port** on JM/TM via `podTemplate` in `apps/base/flink-jobs/resources.yaml`.
 - [X] T027 [US4] Add `Service` or `PodMonitor`/`ServiceMonitor` CR in `infrastructure/controllers/base/monitoring/` (or `apps/base/flink-jobs/`) so **kube-prometheus-stack** scrapes Flink metrics (namespace `monitoring` selector alignment with existing Prometheus Helm values).
+<<<<<<< HEAD
 - [X] T028 [US4] Import Grafana dashboard **14161** (“Flink Job Metrics”) via Grafana provisioning ConfigMap or Helm values under `infrastructure/controllers/base/monitoring/` (as supported by kube-prometheus-stack sidecar pattern).
+=======
+- [X] T028 [US4] Import Grafana dashboard **14911** (“Flink Job Metrics”) via Grafana provisioning ConfigMap or Helm values under `infrastructure/controllers/base/monitoring/` (as supported by kube-prometheus-stack sidecar pattern).
+>>>>>>> 3fc06d2 (Add synthetic trnasaction data producer.  Create Flink SQL Streaming job and Grafana dashboards)
 - [X] T029 [US4] Import a **Kafka Overview** dashboard from Grafana.com (search “Kafka Overview” / Strimzi exporter; record final dashboard UID/ID in `docs/runbooks/grafana-dashboards.md`).
 - [X] T030 [US4] Add Grafana dashboard JSON patch or new panel row for **Iceberg write latency** using Prometheus queries against metrics from T021–T022 (save JSON under `docs/runbooks/` or `infrastructure/.../grafana-dashboards/` if repo pattern allows).
 - [X] T031 [US4] Document alert rules (optional) for high Iceberg commit latency or failed checkpoints in `docs/runbooks/` — link to PrometheusRule if added.
