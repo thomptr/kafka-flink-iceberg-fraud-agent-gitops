@@ -11,3 +11,6 @@ patches:
       - op: replace
         path: /spec/timeout
         value: 30m
+      - op: add
+        path: /spec/targetNamespace
+        value: kubeflow
