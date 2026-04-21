@@ -9,3 +9,8 @@ configMapGenerator:
       - flink_streaming_job.sql
     options:
       disableNameSuffixHash: true
+  - name: flink-scored-ddl
+    files:
+      - flink_scored_ddl.sql
+    options:
+      disableNameSuffixHash: true

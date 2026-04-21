@@ -14,3 +14,12 @@ patches:
       - op: add
         path: /spec/targetNamespace
         value: kubeflow
+  - path: kfp-resource-patch.yaml
+    target:
+      kind: Deployment
+      namespace: kubeflow
+  - path: kserve-rawdeployment-patch.yaml
+    target:
+      kind: ConfigMap
+      name: inferenceservice-config
+      namespace: kserve
