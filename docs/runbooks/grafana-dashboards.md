@@ -6,7 +6,7 @@ This runbook lists Grafana.com dashboards and custom panels used for the Kafka �
 
 | Dashboard | Grafana.com ID | Notes |
 |-----------|------------------|--------|
-| Flink Job Metrics | **14161** | Import from grafana.com; datasource Prometheus. Shows job throughput, checkpoints, backpressure. |
+| Flink Job Metrics | **14911** | Import from grafana.com; datasource Prometheus. Shows job throughput, checkpoints, backpressure. |
 
 **Ownership**: update this file when switching dashboard versions or IDs.
 
@@ -61,7 +61,7 @@ Grafana runs in **`monitoring`**; the bootstrap DNS above resolves cluster-wide.
 
 Pure Flink SQL does not emit a dedicated Iceberg commit histogram in this repo. Until a Java sink wrapper adds `user_scope_iceberg_commit_latency_ms`, use:
 
-- Flink checkpoint duration / alignment metrics as a proxy (`flink_jobmanager_job_numberOfCompletedCheckpoints`, checkpoint times from dashboard 14161).
+- Flink checkpoint duration / alignment metrics as a proxy (`flink_jobmanager_job_numberOfCompletedCheckpoints`, checkpoint times from dashboard 14911).
 - Task/operator metrics whose names contain `Iceberg` or sink commit timing (exact names vary by Flink and Iceberg connector versions — confirm in Prometheus **Targets** → Flink job, then **Graph** autocomplete).
 
 **Example PromQL (adjust metric names after discovery)**:
