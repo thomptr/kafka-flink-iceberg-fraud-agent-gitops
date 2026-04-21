@@ -14,5 +14,3 @@ patches:
       - op: add
         path: /spec/targetNamespace
         value: kubeflow
-  - path: kfp-resource-patch.yaml
-  - path: kserve-rawdeployment-patch.yaml

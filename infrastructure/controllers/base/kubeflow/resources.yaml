@@ -312,6 +312,95 @@ spec:
     - name: kubeflow-namespace
   interval: 30m
   path: ./apps/pipeline/upstream/env/cert-manager/platform-agnostic-multi-user
+  patches:
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-api-server
+                  resources:
+                    requests:
+                      cpu: 250m
+                      memory: 256Mi
+                    limits:
+                      cpu: "1"
+                      memory: 1Gi
+      target:
+        kind: Deployment
+        name: ml-pipeline
+        namespace: kubeflow
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline-ui
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-ui
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+      target:
+        kind: Deployment
+        name: ml-pipeline-ui
+        namespace: kubeflow
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline-persistenceagent
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-persistenceagent
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 500m
+                      memory: 256Mi
+      target:
+        kind: Deployment
+        name: ml-pipeline-persistenceagent
+        namespace: kubeflow
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline-scheduledworkflow
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-scheduledworkflow
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 500m
+                      memory: 256Mi
+      target:
+        kind: Deployment
+        name: ml-pipeline-scheduledworkflow
+        namespace: kubeflow
   prune: true
   retryInterval: 2m
   sourceRef:
@@ -331,6 +420,21 @@ spec:
     - name: kubeflow-istio-resources
   interval: 30m
   path: ./contrib/kserve/kserve
+  patches:
+    - patch: |
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: inferenceservice-config
+          namespace: kserve
+        data:
+          deploy: |
+            {
+              "defaultDeploymentMode": "RawDeployment"
+            }
+      target:
+        kind: ConfigMap
+        name: inferenceservice-config
   prune: true
   retryInterval: 2m
   sourceRef:
