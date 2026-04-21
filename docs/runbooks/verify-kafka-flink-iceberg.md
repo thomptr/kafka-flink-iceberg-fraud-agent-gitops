@@ -138,7 +138,62 @@ New **`.parquet`** (or Iceberg data) paths under the warehouse for **`default`**
 
 ---
 
-## 4. When something is wrong
+## 4. Model scoring: `transactions_scored` table
+
+Once **`fraud-score-enricher`** FlinkDeployment is running and the KServe `fraud-detector`
+InferenceService is ready, rows with `fraud_probability` scores appear in `transactions_scored`.
+
+**Check FlinkDeployment status**
+
+```bash
+kubectl -n flink-system get flinkdeployment fraud-score-enricher -o wide
+kubectl -n flink-system get pods -l app=fraud-score-enricher
+```
+
+**Check the DDL Job completed** (one-shot table creation)
+
+```bash
+kubectl -n flink-system get job create-transactions-scored-table
+```
+
+Expect `COMPLETIONS: 1/1`. If it failed, check logs:
+
+```bash
+kubectl -n flink-system logs job/create-transactions-scored-table
+```
+
+**Read `transactions_scored` via PyIceberg**
+
+With Polaris and MinIO port-forwarded (same as step 3 above):
+
+```python
+t = cat.load_table(("default", "transactions_scored"))
+df = t.scan().limit(10).to_arrow()
+print(df.select(["transaction_id", "amount", "fraud_probability"]))
+```
+
+**Success**: `fraud_probability` column has values in `[0.0, 1.0]` for normal rows and `-1.0` for
+rows where KServe was unavailable or timed out.
+
+**Check KServe endpoint reachability from Flink**
+
+```bash
+JM=$(kubectl -n flink-system get pods -l app=fraud-score-enricher,component=jobmanager \
+     -o jsonpath='{.items[0].metadata.name}')
+kubectl -n flink-system exec "$JM" -c flink-main-container -- \
+  curl -s -o /dev/null -w "%{http_code}" \
+  http://fraud-detector.kubeflow-user-example-com.svc.cluster.local/v2/models/fraud-detector/ready
+```
+
+Expect `200`. If not, check that the KServe `InferenceService` is in **Ready** state:
+
+```bash
+kubectl -n kubeflow-user-example-com get inferenceservice fraud-detector
+```
+
+---
+
+## 5. When something is wrong
 
 | Symptom | Where to look |
 |---------|----------------|

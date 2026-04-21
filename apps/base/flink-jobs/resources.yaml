@@ -46,6 +46,59 @@ roleRef:
   kind: Role
   name: flink
 ---
+# One-shot Job: creates the transactions_scored Iceberg table before the scoring FlinkDeployment starts.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-transactions-scored-table
+  namespace: flink-system
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: flink
+      containers:
+        - name: ddl-runner
+          image: flink-sql-runner:1.20.5
+          command:
+            - java
+            - -cp
+            - /opt/flink/lib/*
+            - org.example.fraud.flink.SqlRunner
+            - /opt/flink/sql/flink_scored_ddl.sql
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-flink-s3-credentials
+                  key: rootUser
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-flink-s3-credentials
+                  key: rootPassword
+            - name: POLARIS_OAUTH_CREDENTIAL
+              valueFrom:
+                secretKeyRef:
+                  name: polaris-flink-oauth
+                  key: credential
+                  optional: true
+            - name: POLARIS_BOOTSTRAP_CREDENTIALS
+              valueFrom:
+                secretKeyRef:
+                  name: polaris-bootstrap-credentials
+                  key: credentials
+                  optional: true
+          volumeMounts:
+            - name: flink-scored-ddl
+              mountPath: /opt/flink/sql
+              readOnly: true
+      volumes:
+        - name: flink-scored-ddl
+          configMap:
+            name: flink-scored-ddl
+---
 apiVersion: flink.apache.org/v1beta1
 kind: FlinkDeployment
 metadata:
@@ -139,5 +192,104 @@ spec:
     entryClass: org.example.fraud.flink.SqlRunner
     args:
       - "/opt/flink/sql/flink_streaming_job.sql"
+    parallelism: 1
+    upgradeMode: last-state
+---
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: fraud-score-enricher
+  namespace: flink-system
+spec:
+  image: flink-sql-runner:1.20.5
+  flinkVersion: v1_20
+  serviceAccount: flink
+  flinkConfiguration:
+    taskmanager.numberOfTaskSlots: "2"
+    state.backend: rocksdb
+    execution.checkpointing.interval: "60000"
+    state.checkpoints.dir: s3://iceberg-warehouse/flink-checkpoints
+    state.savepoints.dir: s3://iceberg-warehouse/flink-savepoints
+    fs.s3a.endpoint: http://minio.minio.svc.cluster.local:9000
+    fs.s3a.path.style.access: "true"
+    fs.s3a.connection.ssl.enabled: "false"
+    fs.s3a.aws.credentials.provider: org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
+    metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+    metrics.reporter.prom.port: "9249"
+  jobManager:
+    resource:
+      memory: 1024m
+      cpu: 1
+    podTemplate:
+      spec:
+        containers:
+          - name: flink-main-container
+            ports:
+              - name: metrics
+                containerPort: 9249
+            env:
+              - name: AWS_ACCESS_KEY_ID
+                valueFrom:
+                  secretKeyRef:
+                    name: minio-flink-s3-credentials
+                    key: rootUser
+              - name: AWS_SECRET_ACCESS_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: minio-flink-s3-credentials
+                    key: rootPassword
+              - name: POLARIS_OAUTH_CREDENTIAL
+                valueFrom:
+                  secretKeyRef:
+                    name: polaris-flink-oauth
+                    key: credential
+                    optional: true
+              - name: POLARIS_BOOTSTRAP_CREDENTIALS
+                valueFrom:
+                  secretKeyRef:
+                    name: polaris-bootstrap-credentials
+                    key: credentials
+                    optional: true
+              - name: KSERVE_ENDPOINT
+                value: "http://fraud-detector.kubeflow-user-example-com.svc.cluster.local/v2/models/fraud-detector/infer"
+  taskManager:
+    resource:
+      memory: 1024m
+      cpu: 1
+    podTemplate:
+      spec:
+        containers:
+          - name: flink-main-container
+            ports:
+              - name: metrics
+                containerPort: 9249
+            env:
+              - name: AWS_ACCESS_KEY_ID
+                valueFrom:
+                  secretKeyRef:
+                    name: minio-flink-s3-credentials
+                    key: rootUser
+              - name: AWS_SECRET_ACCESS_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: minio-flink-s3-credentials
+                    key: rootPassword
+              - name: POLARIS_OAUTH_CREDENTIAL
+                valueFrom:
+                  secretKeyRef:
+                    name: polaris-flink-oauth
+                    key: credential
+                    optional: true
+              - name: POLARIS_BOOTSTRAP_CREDENTIALS
+                valueFrom:
+                  secretKeyRef:
+                    name: polaris-bootstrap-credentials
+                    key: credentials
+                    optional: true
+              - name: KSERVE_ENDPOINT
+                value: "http://fraud-detector.kubeflow-user-example-com.svc.cluster.local/v2/models/fraud-detector/infer"
+  job:
+    jarURI: local:///opt/flink/lib/sql-runner.jar
+    entryClass: org.example.fraud.flink.ModelScorerJob
     parallelism: 1
     upgradeMode: last-state
