@@ -433,6 +433,14 @@ spec:
         kind: Service
         name: ml-pipeline-ui
         namespace: kubeflow
+    - patch: |
+        - op: replace
+          path: /spec/trafficPolicy/tls/mode
+          value: DISABLE
+      target:
+        kind: DestinationRule
+        name: ml-pipeline-ui
+        namespace: kubeflow
   images:
     - name: gcr.io/ml-pipeline/frontend
       newName: nginx
