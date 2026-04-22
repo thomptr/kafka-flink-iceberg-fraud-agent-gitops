@@ -16,16 +16,15 @@ spec:
       containers:
         - name: mlflow
           image: ghcr.io/mlflow/mlflow:v2.11.3
+          command: ["sh", "-c"]
           args:
-            - mlflow
-            - server
-            - --host
-            - 0.0.0.0
-            - --port
-            - "5000"
-            - --serve-artifacts
-            - --artifacts-destination
-            - s3://mlflow-artifacts
+            - |
+              pip install -q boto3 && \
+              mlflow server \
+                --host 0.0.0.0 \
+                --port 5000 \
+                --serve-artifacts \
+                --artifacts-destination s3://mlflow-artifacts
           env:
             - name: MLFLOW_S3_ENDPOINT_URL
               value: http://minio.minio.svc.cluster.local:9000

@@ -48,7 +48,13 @@ def data_ingestion(
     table = catalog.load_table(("default", "transactions"))
     df = table.scan().to_pandas()
 
-    df["label"] = (df["amount_velocity_5min"] > 500).astype(int)
+    # Label: top 5% by velocity OR top 5% by distance → ~10% fraud rate
+    vel_threshold = df["amount_velocity_5min"].quantile(0.95)
+    dist_threshold = df["distance_from_home_km"].quantile(0.95)
+    df["label"] = (
+        (df["amount_velocity_5min"] > vel_threshold) |
+        (df["distance_from_home_km"] > dist_threshold)
+    ).astype(int)
     df = df[["amount", "amount_velocity_5min", "distance_from_home_km", "label"]].dropna()
 
     df.to_parquet(output_dataset.path, index=False)

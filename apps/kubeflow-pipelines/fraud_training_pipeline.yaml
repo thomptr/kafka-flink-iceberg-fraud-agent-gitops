@@ -148,10 +148,14 @@ deploymentSpec:
           \ STS credentials.\n    # Remove the delegation header so Polaris returns\
           \ plain table metadata.\n    catalog._session.headers.pop(\"X-Iceberg-Access-Delegation\"\
           , None)\n    table = catalog.load_table((\"default\", \"transactions\"))\n\
-          \    df = table.scan().to_pandas()\n\n    df[\"label\"] = (df[\"amount_velocity_5min\"\
-          ] > 500).astype(int)\n    df = df[[\"amount\", \"amount_velocity_5min\"\
-          , \"distance_from_home_km\", \"label\"]].dropna()\n\n    df.to_parquet(output_dataset.path,\
-          \ index=False)\n    print(f\"Ingested {len(df)} rows; fraud rate: {df['label'].mean():.3f}\"\
+          \    df = table.scan().to_pandas()\n\n    # Label: top 5% by velocity OR\
+          \ top 5% by distance \u2192 ~10% fraud rate\n    vel_threshold = df[\"amount_velocity_5min\"\
+          ].quantile(0.95)\n    dist_threshold = df[\"distance_from_home_km\"].quantile(0.95)\n\
+          \    df[\"label\"] = (\n        (df[\"amount_velocity_5min\"] > vel_threshold)\
+          \ |\n        (df[\"distance_from_home_km\"] > dist_threshold)\n    ).astype(int)\n\
+          \    df = df[[\"amount\", \"amount_velocity_5min\", \"distance_from_home_km\"\
+          , \"label\"]].dropna()\n\n    df.to_parquet(output_dataset.path, index=False)\n\
+          \    print(f\"Ingested {len(df)} rows; fraud rate: {df['label'].mean():.3f}\"\
           )\n\n"
         image: python:3.11-slim
     exec-deploy-kserve:
@@ -187,11 +191,12 @@ deploymentSpec:
           \ -> None:\n    import os\n    import mlflow\n    from mlflow.tracking import\
           \ MlflowClient\n    from kubernetes import client as k8s_client, config\
           \ as k8s_config\n\n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"] = mlflow_s3_endpoint_url\n\
-          \    os.environ[\"AWS_ACCESS_KEY_ID\"] = aws_access_key_id\n    os.environ[\"\
-          AWS_SECRET_ACCESS_KEY\"] = aws_secret_access_key\n\n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n\
-          \    kf_client = MlflowClient()\n\n    versions = kf_client.get_latest_versions(model_name,\
-          \ stages=[\"Staging\"])\n    if not versions:\n        raise RuntimeError(f\"\
-          No Staging version found for model '{model_name}'\")\n    model_uri = versions[0].source\n\
+          \    os.environ.setdefault(\"AWS_ACCESS_KEY_ID\", aws_access_key_id)\n \
+          \   os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\", aws_secret_access_key)\n\
+          \n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n    kf_client = MlflowClient()\n\
+          \n    versions = kf_client.get_latest_versions(model_name, stages=[\"Staging\"\
+          ])\n    if not versions:\n        raise RuntimeError(f\"No Staging version\
+          \ found for model '{model_name}'\")\n    model_uri = versions[0].source\n\
           \n    inference_service = {\n        \"apiVersion\": \"serving.kserve.io/v1beta1\"\
           ,\n        \"kind\": \"InferenceService\",\n        \"metadata\": {\n  \
           \          \"name\": model_name,\n            \"namespace\": namespace,\n\
@@ -247,14 +252,15 @@ deploymentSpec:
           \    aws_access_key_id: str,\n    aws_secret_access_key: str,\n) -> None:\n\
           \    import os\n    import mlflow\n    from mlflow.tracking import MlflowClient\n\
           \n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"] = mlflow_s3_endpoint_url\n\
-          \    os.environ[\"AWS_ACCESS_KEY_ID\"] = aws_access_key_id\n    os.environ[\"\
-          AWS_SECRET_ACCESS_KEY\"] = aws_secret_access_key\n\n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n\
-          \    client = MlflowClient()\n\n    model_uri = trained_model.metadata[\"\
-          model_uri\"]\n    mv = mlflow.register_model(model_uri=model_uri, name=model_name)\n\
-          \n    client.transition_model_version_stage(\n        name=model_name,\n\
-          \        version=mv.version,\n        stage=\"Staging\",\n        archive_existing_versions=True,\n\
-          \    )\n    print(f\"Registered {model_name} v{mv.version} \u2192 Staging\"\
-          )\n    print(f\"Model URI: {model_uri}\")\n\n"
+          \    os.environ.setdefault(\"AWS_ACCESS_KEY_ID\", aws_access_key_id)\n \
+          \   os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\", aws_secret_access_key)\n\
+          \n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n    client = MlflowClient()\n\
+          \n    model_uri = trained_model.metadata[\"model_uri\"]\n    mv = mlflow.register_model(model_uri=model_uri,\
+          \ name=model_name)\n\n    client.transition_model_version_stage(\n     \
+          \   name=model_name,\n        version=mv.version,\n        stage=\"Staging\"\
+          ,\n        archive_existing_versions=True,\n    )\n    print(f\"Registered\
+          \ {model_name} v{mv.version} \u2192 Staging\")\n    print(f\"Model URI:\
+          \ {model_uri}\")\n\n"
         image: python:3.11-slim
     exec-train-model:
       container:
@@ -292,24 +298,25 @@ deploymentSpec:
           \ pd\n    import xgboost as xgb\n    from sklearn.model_selection import\
           \ train_test_split\n    from sklearn.metrics import roc_auc_score, accuracy_score\n\
           \n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"] = mlflow_s3_endpoint_url\n\
-          \    os.environ[\"AWS_ACCESS_KEY_ID\"] = aws_access_key_id\n    os.environ[\"\
-          AWS_SECRET_ACCESS_KEY\"] = aws_secret_access_key\n\n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n\
-          \    mlflow.set_experiment(experiment_name)\n\n    df = pd.read_parquet(input_dataset.path)\n\
-          \    X = df[[\"amount\", \"amount_velocity_5min\", \"distance_from_home_km\"\
-          ]]\n    y = df[\"label\"]\n    X_train, X_test, y_train, y_test = train_test_split(X,\
-          \ y, test_size=0.2, random_state=42)\n\n    mlflow.xgboost.autolog()\n \
-          \   with mlflow.start_run() as run:\n        # Try GPU first; fall back\
-          \ to hist (CPU) if no CUDA device available\n        try:\n            import\
-          \ subprocess\n            subprocess.run([\"nvidia-smi\"], check=True, capture_output=True)\n\
-          \            tree_method = \"gpu_hist\"\n            device = \"cuda\"\n\
-          \        except Exception:\n            tree_method = \"hist\"\n       \
-          \     device = \"cpu\"\n\n        model = xgb.XGBClassifier(\n         \
-          \   n_estimators=100,\n            max_depth=6,\n            learning_rate=0.1,\n\
-          \            tree_method=tree_method,\n            device=device,\n    \
-          \        eval_metric=\"auc\",\n            use_label_encoder=False,\n  \
-          \      )\n        model.fit(X_train, y_train, eval_set=[(X_test, y_test)],\
-          \ verbose=False)\n\n        y_pred = model.predict(X_test)\n        y_prob\
-          \ = model.predict_proba(X_test)[:, 1]\n        auc = roc_auc_score(y_test,\
+          \    # Prefer env vars injected from k8s secret over explicit params\n \
+          \   os.environ.setdefault(\"AWS_ACCESS_KEY_ID\", aws_access_key_id)\n  \
+          \  os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\", aws_secret_access_key)\n\
+          \n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n    mlflow.set_experiment(experiment_name)\n\
+          \n    df = pd.read_parquet(input_dataset.path)\n    X = df[[\"amount\",\
+          \ \"amount_velocity_5min\", \"distance_from_home_km\"]]\n    y = df[\"label\"\
+          ]\n    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2,\
+          \ random_state=42)\n\n    mlflow.xgboost.autolog()\n    with mlflow.start_run()\
+          \ as run:\n        # Try GPU first; fall back to hist (CPU) if no CUDA device\
+          \ available\n        try:\n            import subprocess\n            subprocess.run([\"\
+          nvidia-smi\"], check=True, capture_output=True)\n            tree_method\
+          \ = \"gpu_hist\"\n            device = \"cuda\"\n        except Exception:\n\
+          \            tree_method = \"hist\"\n            device = \"cpu\"\n\n  \
+          \      model = xgb.XGBClassifier(\n            n_estimators=100,\n     \
+          \       max_depth=6,\n            learning_rate=0.1,\n            tree_method=tree_method,\n\
+          \            device=device,\n            eval_metric=\"auc\",\n        \
+          \    use_label_encoder=False,\n        )\n        model.fit(X_train, y_train,\
+          \ eval_set=[(X_test, y_test)], verbose=False)\n\n        y_pred = model.predict(X_test)\n\
+          \        y_prob = model.predict_proba(X_test)[:, 1]\n        auc = roc_auc_score(y_test,\
           \ y_prob)\n        acc = accuracy_score(y_test, y_pred)\n\n        mlflow.log_metrics({\"\
           auc\": auc, \"accuracy\": acc})\n        mlflow.xgboost.log_model(model,\
           \ artifact_path=\"xgboost-model\")\n\n        model.save_model(output_model.path\

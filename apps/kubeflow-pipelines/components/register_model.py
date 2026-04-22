@@ -18,8 +18,8 @@ def register_model(
     from mlflow.tracking import MlflowClient
 
     os.environ["MLFLOW_S3_ENDPOINT_URL"] = mlflow_s3_endpoint_url
-    os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key_id
-    os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_access_key
+    os.environ.setdefault("AWS_ACCESS_KEY_ID", aws_access_key_id)
+    os.environ.setdefault("AWS_SECRET_ACCESS_KEY", aws_secret_access_key)
 
     mlflow.set_tracking_uri(mlflow_tracking_uri)
     client = MlflowClient()
