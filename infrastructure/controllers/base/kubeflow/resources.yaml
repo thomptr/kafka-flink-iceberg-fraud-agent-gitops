@@ -401,6 +401,27 @@ spec:
         kind: Deployment
         name: ml-pipeline-scheduledworkflow
         namespace: kubeflow
+    - patch: |
+        - op: replace
+          path: /spec/template/spec/containers/0/readinessProbe
+          value:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        - op: replace
+          path: /spec/template/spec/containers/0/livenessProbe
+          value:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      target:
+        kind: Deployment
+        name: ml-pipeline-ui
+        namespace: kubeflow
   images:
     - name: gcr.io/ml-pipeline/frontend
       newName: nginx
