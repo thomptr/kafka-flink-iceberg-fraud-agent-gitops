@@ -357,6 +357,35 @@ spec:
         kind: Deployment
         name: ml-pipeline-ui
         namespace: kubeflow
+    - patch: |-
+        - op: replace
+          path: /spec/template/spec/containers/0/livenessProbe
+          value:
+            httpGet:
+              path: /apis/v1beta1/healthz
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+        - op: replace
+          path: /spec/template/spec/containers/0/readinessProbe
+          value:
+            httpGet:
+              path: /apis/v1beta1/healthz
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+      target:
+        kind: Deployment
+        name: ml-pipeline-ui
+        namespace: kubeflow
     - patch: |
         apiVersion: apps/v1
         kind: Deployment
