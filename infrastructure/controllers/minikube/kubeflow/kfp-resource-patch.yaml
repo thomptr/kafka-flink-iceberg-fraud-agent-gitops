@@ -26,6 +26,8 @@ spec:
     spec:
       containers:
         - name: ml-pipeline-ui
+          # Image is loaded into minikube via `minikube image load` - do not pull.
+          imagePullPolicy: Never
           resources:
             requests:
               cpu: 100m

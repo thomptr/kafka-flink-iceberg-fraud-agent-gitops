@@ -401,50 +401,9 @@ spec:
         kind: Deployment
         name: ml-pipeline-scheduledworkflow
         namespace: kubeflow
-    - patch: |
-        - op: replace
-          path: /spec/template/spec/containers/0/readinessProbe
-          value:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 10
-        - op: replace
-          path: /spec/template/spec/containers/0/livenessProbe
-          value:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 10
-        - op: replace
-          path: /spec/template/spec/containers/0/ports/0/containerPort
-          value: 80
-      target:
-        kind: Deployment
-        name: ml-pipeline-ui
-        namespace: kubeflow
-    - patch: |
-        - op: replace
-          path: /spec/ports/0/targetPort
-          value: 80
-      target:
-        kind: Service
-        name: ml-pipeline-ui
-        namespace: kubeflow
-    - patch: |
-        - op: replace
-          path: /spec/trafficPolicy/tls/mode
-          value: DISABLE
-      target:
-        kind: DestinationRule
-        name: ml-pipeline-ui
-        namespace: kubeflow
   images:
     - name: gcr.io/ml-pipeline/frontend
-      newName: nginx
-      newTag: 1.25-alpine
+      newTag: 2.3.0
   prune: true
   retryInterval: 2m
   sourceRef:
