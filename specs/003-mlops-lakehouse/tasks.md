@@ -41,10 +41,10 @@ patched to `rawDeployment` mode on Minikube (no Knative Serving required).
 **Purpose**: Confirm the kubeflow/manifests v1.9.1 tree contains the expected KFP and KServe
 paths before writing any Flux resources.
 
-- [ ] T001 Confirm KFP path exists in kubeflow/manifests v1.9.1 by fetching the directory
+- [X] T001 Confirm KFP path exists in kubeflow/manifests v1.9.1 by fetching the directory
   listing: `curl -s "https://api.github.com/repos/kubeflow/manifests/contents/apps/pipeline/upstream/env/cert-manager/platform-agnostic-multi-user?ref=v1.9.1" | python3 -c "import json,sys; [print(f['name']) for f in json.load(sys.stdin)]"` — expect a `kustomization.yaml` in the output; if the path returns 404, the KFP path for v1.9.1 is `apps/pipeline/upstream/env/platform-agnostic-multi-user` (fallback path without cert-manager subfolder); note the correct path for T004
 
-- [ ] T002 [P] Confirm KServe contrib path exists in kubeflow/manifests v1.9.1:
+- [X] T002 [P] Confirm KServe contrib path exists in kubeflow/manifests v1.9.1:
   `curl -s "https://api.github.com/repos/kubeflow/manifests/contents/contrib/kserve/kserve?ref=v1.9.1" | python3 -c "import json,sys; d=json.load(sys.stdin); print([f['name'] for f in d] if isinstance(d,list) else d.get('message'))"` — expect a list of files; note whether a `kustomization.yaml` is present; if path returns 404, KServe is not in kubeflow/manifests v1.9.1 — use separate GitRepository task T002b below
 
 - [ ] T002b [P] (Run only if T002 returns 404) Add a second GitRepository `kserve-manifests`
@@ -60,7 +60,7 @@ paths before writing any Flux resources.
 **Purpose**: Confirm all prerequisite Kustomizations that KFP and KServe depend on are healthy
 in Flux before adding new components.
 
-- [ ] T003 Verify prerequisite Kustomizations are Ready before adding KFP or KServe:
+- [X] T003 Verify prerequisite Kustomizations are Ready before adding KFP or KServe:
   ```bash
   kubectl -n flux-system get kustomization \
     kubeflow-cert-manager kubeflow-istio-resources kubeflow-namespace kubeflow-roles \
@@ -82,7 +82,7 @@ the KubeFlow dashboard → Pipelines shows the pipeline list page without errors
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] Append a `kubeflow-pipelines` Flux Kustomization block to
+- [X] T004 [US1] Append a `kubeflow-pipelines` Flux Kustomization block to
   `infrastructure/controllers/base/kubeflow/resources.yaml` after the final existing
   Kustomization block (after the `kubeflow` user-namespace entry). Use the path confirmed in
   T001 (default: `apps/pipeline/upstream/env/cert-manager/platform-agnostic-multi-user`).
@@ -112,7 +112,7 @@ the KubeFlow dashboard → Pipelines shows the pipeline list page without errors
     wait: true
   ```
 
-- [ ] T005 [US1] Add resource-limit patches for KFP components to
+- [X] T005 [US1] Add resource-limit patches for KFP components to
   `infrastructure/controllers/minikube/kubeflow/kustomization.yaml` so Minikube is not
   overwhelmed. Add a new `patches` entry (alongside the existing `kubeflow` timeout patch)
   that applies Strategic Merge Patches reducing cpu/memory requests for the four heaviest
