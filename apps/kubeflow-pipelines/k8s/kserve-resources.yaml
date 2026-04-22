@@ -1,0 +1,24 @@
+---
+# Service alias so Flink can reach the predictor via DNS name matching the InferenceService.
+# KServe creates fraud-detector-predictor but Flink is configured to call fraud-detector.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-detector
+  namespace: kubeflow-user-example-com
+spec:
+  selector:
+    serving.kserve.io/inferenceservice: fraud-detector
+    component: predictor
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+# ServiceAccount used by the KServe storage-initializer to pull the model from MinIO.
+# The kserve-s3-creds Secret is created at runtime by the deploy_kserve pipeline component.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kserve-sa
+  namespace: kubeflow-user-example-com

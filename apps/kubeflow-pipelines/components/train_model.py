@@ -74,6 +74,15 @@ def train_model(
         mlflow.log_metrics({"auc": auc, "accuracy": acc})
         mlflow.xgboost.log_model(model, artifact_path="xgboost-model")
 
+        # KServe xgbserver v0.13.1 looks for .bst/.json/.ubj — not .xgb.
+        # Log model.bst alongside the MLflow artifact so storage-initializer
+        # downloads it and xgbserver can discover it.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bst_path = os.path.join(tmpdir, "model.bst")
+            model.get_booster().save_model(bst_path)
+            mlflow.log_artifact(bst_path, artifact_path="xgboost-model")
+
         model.save_model(output_model.path + ".json")
         output_model.metadata["run_id"] = run.info.run_id
         output_model.metadata["model_uri"] = f"runs:/{run.info.run_id}/xgboost-model"
