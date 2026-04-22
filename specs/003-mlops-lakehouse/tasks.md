@@ -199,7 +199,7 @@ the KubeFlow dashboard → Pipelines shows the pipeline list page without errors
       namespace: kubeflow
   ```
 
-- [ ] T006 [US1] Commit the changes and trigger Flux reconciliation:
+- [X] T006 [US1] Commit the changes and trigger Flux reconciliation:
   ```bash
   git add infrastructure/controllers/base/kubeflow/resources.yaml \
           infrastructure/controllers/minikube/kubeflow/kustomization.yaml \
@@ -210,7 +210,7 @@ the KubeFlow dashboard → Pipelines shows the pipeline list page without errors
   flux reconcile ks infra-controllers --with-source
   ```
 
-- [ ] T007 [US1] Verify KFP pods are running (this will take 5–15 minutes; poll until stable):
+- [X] T007 [US1] Verify KFP pods are running (this will take 5–15 minutes; poll until stable):
   ```bash
   # Watch KFP pods come up
   kubectl get pods -n kubeflow -w | grep -E "ml-pipeline|metadata|workflow"
@@ -224,7 +224,7 @@ the KubeFlow dashboard → Pipelines shows the pipeline list page without errors
   kubectl -n flux-system get kustomization kubeflow-pipelines
   ```
 
-- [ ] T008 [US1] Verify the Pipelines page loads in the KubeFlow dashboard by port-forwarding
+- [X] T008 [US1] Verify the Pipelines page loads in the KubeFlow dashboard by port-forwarding
   and opening `http://127.0.0.1:8080/pipeline`:
   ```bash
   kubectl -n istio-system port-forward svc/istio-ingressgateway 8080:80
@@ -250,7 +250,7 @@ header rather than "server doesn't have a resource type". `kubectl get pods -n k
 
 ### Implementation for User Story 3
 
-- [ ] T009 [US3] Append two KServe Kustomization blocks to
+- [X] T009 [US3] Append two KServe Kustomization blocks to
   `infrastructure/controllers/base/kubeflow/resources.yaml`:
 
   **Block 1 — KServe controller + CRDs** (depends on cert-manager and istio):
@@ -301,7 +301,7 @@ header rather than "server doesn't have a resource type". `kubectl get pods -n k
     wait: true
   ```
 
-- [ ] T010 [US3] Create
+- [X] T010 [US3] Create
   `infrastructure/controllers/minikube/kubeflow/kserve-rawdeployment-patch.yaml` to switch
   KServe from serverless (Knative) to rawDeployment mode, which does not require Knative
   Serving and is appropriate for Minikube:
@@ -326,7 +326,7 @@ header rather than "server doesn't have a resource type". `kubectl get pods -n k
       namespace: kserve
   ```
 
-- [ ] T011 [US3] Commit and trigger reconciliation:
+- [X] T011 [US3] Commit and trigger reconciliation:
   ```bash
   git add infrastructure/controllers/base/kubeflow/resources.yaml \
           infrastructure/controllers/minikube/kubeflow/kustomization.yaml \
@@ -336,14 +336,14 @@ header rather than "server doesn't have a resource type". `kubectl get pods -n k
   flux reconcile ks infra-controllers --with-source
   ```
 
-- [ ] T012 [US3] Watch KServe deployment (5–10 minutes):
+- [X] T012 [US3] Watch KServe deployment (5–10 minutes):
   ```bash
   kubectl -n flux-system get kustomization kubeflow-kserve -w
   kubectl get pods -n kserve -w
   ```
   Expect `kserve-controller-manager` pod in `Running` state and Kustomization `READY=True`.
 
-- [ ] T013 [US3] Verify KServe CRDs are installed:
+- [X] T013 [US3] Verify KServe CRDs are installed:
   ```bash
   kubectl get inferenceservice -A
   kubectl get crd | grep kserve
@@ -352,7 +352,7 @@ header rather than "server doesn't have a resource type". `kubectl get pods -n k
   `kubectl get inferenceservice -A` command must return a table header (not "server doesn't
   have a resource type").
 
-- [ ] T014 [US3] Verify the KServe models web-app (dashboard endpoints page) is accessible:
+- [X] T014 [US3] Verify the KServe models web-app (dashboard endpoints page) is accessible:
   ```bash
   kubectl -n flux-system get kustomization kubeflow-kserve-models-web-app
   kubectl get pods -n kubeflow | grep models-web-app
@@ -471,7 +471,7 @@ namespace. Polaris and MLFlow credentials are injected via Kubernetes Secrets us
 
 **Purpose**: Create the directory layout and shared configuration before writing any component.
 
-- [ ] T017 Create the `apps/kubeflow-pipelines/` directory structure with empty placeholder
+- [X] T017 Create the `apps/kubeflow-pipelines/` directory structure with empty placeholder
   files so the layout is clear before implementation:
   ```
   apps/kubeflow-pipelines/
@@ -491,7 +491,7 @@ namespace. Polaris and MLFlow credentials are injected via Kubernetes Secrets us
   Create the directories with `mkdir -p apps/kubeflow-pipelines/components apps/kubeflow-pipelines/k8s`
   and touch each file. Create `apps/kubeflow-pipelines/components/__init__.py` as an empty file.
 
-- [ ] T018 Create `apps/kubeflow-pipelines/requirements.txt` with exact pinned versions:
+- [X] T018 Create `apps/kubeflow-pipelines/requirements.txt` with exact pinned versions:
   ```
   kfp==2.7.0
   kfp-kubernetes==1.2.0
@@ -520,7 +520,7 @@ one run with `auc` and `accuracy` metrics logged and a model artifact at `xgboos
 
 ### Implementation for User Story 1
 
-- [ ] T019 [US1] Create `apps/kubeflow-pipelines/components/data_ingestion.py`. This component
+- [X] T019 [US1] Create `apps/kubeflow-pipelines/components/data_ingestion.py`. This component
   reads from the Polaris REST catalog and writes a Parquet file as a KFP output artifact.
   Full file content:
   ```python
@@ -574,7 +574,7 @@ one run with `auc` and `accuracy` metrics logged and a model artifact at `xgboos
       print(f"Ingested {len(df)} rows; fraud rate: {df['label'].mean():.3f}")
   ```
 
-- [ ] T020 [US1] Create `apps/kubeflow-pipelines/components/train_model.py`. This component
+- [X] T020 [US1] Create `apps/kubeflow-pipelines/components/train_model.py`. This component
   trains XGBoost with GPU acceleration and logs to MLFlow via autolog. Full file content:
   ```python
   from kfp.dsl import component, Input, Output, Dataset, Model, Metrics
@@ -663,7 +663,7 @@ returns at least one version with non-null `run_id`.
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Create `apps/kubeflow-pipelines/components/register_model.py`. Full file content:
+- [X] T021 [US2] Create `apps/kubeflow-pipelines/components/register_model.py`. Full file content:
   ```python
   from kfp.dsl import component, Input, Model
 
@@ -720,7 +720,7 @@ Send a V2 request and receive a numeric prediction (not a 503 or empty response)
 
 ### Implementation for User Story 3
 
-- [ ] T022 [US3] Create `apps/kubeflow-pipelines/components/deploy_kserve.py`. This component
+- [X] T022 [US3] Create `apps/kubeflow-pipelines/components/deploy_kserve.py`. This component
   creates (or updates) the KServe InferenceService using the Kubernetes Python client. Full file:
   ```python
   from kfp.dsl import component, Input, Model
@@ -813,7 +813,7 @@ Send a V2 request and receive a numeric prediction (not a 503 or empty response)
 **Purpose**: Wire all components into a KFP SDK v2 `@pipeline`, create the container image,
 and submit the compiled pipeline YAML to KFP.
 
-- [ ] T023 Create `apps/kubeflow-pipelines/fraud_training_pipeline.py` — the top-level KFP
+- [X] T023 Create `apps/kubeflow-pipelines/fraud_training_pipeline.py` — the top-level KFP
   pipeline definition. Full file content:
   ```python
   import kfp
@@ -913,7 +913,7 @@ and submit the compiled pipeline YAML to KFP.
       print("Compiled → fraud_training_pipeline.yaml")
   ```
 
-- [ ] T024 Create `apps/kubeflow-pipelines/Dockerfile` for the pipeline runner image. Full content:
+- [X] T024 Create `apps/kubeflow-pipelines/Dockerfile` for the pipeline runner image. Full content:
   ```dockerfile
   FROM python:3.11-slim
 
@@ -933,7 +933,7 @@ and submit the compiled pipeline YAML to KFP.
   CMD ["python", "fraud_training_pipeline.py"]
   ```
 
-- [ ] T025 Create `apps/kubeflow-pipelines/k8s/pipeline-rbac.yaml` — ServiceAccount and
+- [X] T025 Create `apps/kubeflow-pipelines/k8s/pipeline-rbac.yaml` — ServiceAccount and
   ClusterRoleBinding so the pipeline pods can create KServe InferenceServices and read Secrets
   in `kubeflow-user-example-com`. Full content:
   ```yaml
@@ -971,7 +971,7 @@ and submit the compiled pipeline YAML to KFP.
     name: fraud-pipeline-runner
   ```
 
-- [ ] T026 Create `apps/kubeflow-pipelines/k8s/pipeline-secrets.yaml` — placeholder secret
+- [X] T026 Create `apps/kubeflow-pipelines/k8s/pipeline-secrets.yaml` — placeholder secret
   template (values already exist in-cluster; this file documents expected secret keys and
   must NOT contain real credentials). Full content:
   ```yaml
@@ -1006,7 +1006,7 @@ and submit the compiled pipeline YAML to KFP.
     credentials: "<polaris-client-id>:<polaris-client-secret>"
   ```
 
-- [ ] T027 Build the pipeline container image and load it into Minikube:
+- [X] T027 Build the pipeline container image and load it into Minikube:
   ```bash
   cd apps/kubeflow-pipelines
   docker build -t fraud-training-pipeline:0.1.0 .
@@ -1015,7 +1015,7 @@ and submit the compiled pipeline YAML to KFP.
   ```
   Verify: `minikube image ls -p fraud-gitops | grep fraud-training-pipeline` shows `0.1.0`.
 
-- [ ] T028 Mirror the MinIO and Polaris secrets into `kubeflow-user-example-com` namespace
+- [X] T028 Mirror the MinIO and Polaris secrets into `kubeflow-user-example-com` namespace
   and apply RBAC, then compile and upload the pipeline to KFP:
   ```bash
   # Mirror secrets (skip if already present)
@@ -1052,7 +1052,7 @@ and submit the compiled pipeline YAML to KFP.
   EOF
   ```
 
-- [ ] T029 Verify the pipeline run completes and MLFlow has results:
+- [X] T029 Verify the pipeline run completes and MLFlow has results:
   ```bash
   # Watch pipeline run status in KFP UI (port-forward istio-ingressgateway 8080:80)
   # Navigate to http://127.0.0.1:8080/pipeline/#/runs
@@ -1071,7 +1071,7 @@ and submit the compiled pipeline YAML to KFP.
   **Success criteria**: MLFlow shows a run with `metrics.auc > 0.5`; InferenceService
   `fraud-detector` shows `READY=True`.
 
-- [ ] T030 [P] Commit all pipeline source files:
+- [X] T030 [P] Commit all pipeline source files:
   ```bash
   git add apps/kubeflow-pipelines/
   git commit -m "feat: add KFP v2 fraud training pipeline with XGBoost, MLFlow, KServe"
@@ -1082,7 +1082,7 @@ and submit the compiled pipeline YAML to KFP.
 
 ## Phase 11: Polish & Cross-Cutting Concerns (Pipeline)
 
-- [ ] T031 [P] Test the KServe endpoint directly with a V2 inference request to confirm the
+- [X] T031 [P] Test the KServe endpoint directly with a V2 inference request to confirm the
   `fraud-score-enricher` Flink job will receive real scores:
   ```bash
   # Port-forward or use the in-cluster URL from within a temporary pod
@@ -1097,7 +1097,7 @@ and submit the compiled pipeline YAML to KFP.
   If the URL format differs (rawDeployment uses a ClusterIP Service), check:
   `kubectl get svc -n kubeflow-user-example-com | grep fraud-detector`
 
-- [ ] T032 [P] Verify `transactions_scored` Iceberg table contains rows with real
+- [X] T032 [P] Verify `transactions_scored` Iceberg table contains rows with real
   `fraud_probability` values (not -1.0) after the InferenceService is Ready and the
   `fraud-score-enricher` Flink job has processed at least one checkpoint:
   ```python

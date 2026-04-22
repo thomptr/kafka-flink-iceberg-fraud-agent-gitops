@@ -9,6 +9,8 @@
 #    model_name: str [Default: 'fraud-detector']
 #    polaris_uri: str [Default: 'http://polaris.polaris.svc.cluster.local:8181/api/catalog']
 #    warehouse: str [Default: 'quickstart_catalog']
+# Outputs:
+#    train-model-metrics: system.Metrics
 components:
   comp-data-ingestion:
     executorLabel: exec-data-ingestion
@@ -115,7 +117,7 @@ deploymentSpec:
         - -c
         - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
-          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
           \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
           \  python3 -m pip install --quiet --no-warn-script-location 'pyiceberg[pyarrow,s3]==0.7.1'\
           \ 'pandas==2.2.2' 'pyarrow==15.0.2' && \"$0\" \"$@\"\n"
@@ -170,7 +172,7 @@ deploymentSpec:
         - -c
         - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
-          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
           \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
           \  python3 -m pip install --quiet --no-warn-script-location 'kubernetes==29.0.0'\
           \ 'mlflow==2.13.0' 'boto3==1.34.101' && \"$0\" \"$@\"\n"
@@ -188,29 +190,61 @@ deploymentSpec:
           \ *\n\ndef deploy_kserve(\n    trained_model: Input[Model],\n    model_name:\
           \ str,\n    namespace: str,\n    mlflow_tracking_uri: str,\n    mlflow_s3_endpoint_url:\
           \ str,\n    aws_access_key_id: str,\n    aws_secret_access_key: str,\n)\
-          \ -> None:\n    import os\n    import mlflow\n    from mlflow.tracking import\
-          \ MlflowClient\n    from kubernetes import client as k8s_client, config\
-          \ as k8s_config\n\n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"] = mlflow_s3_endpoint_url\n\
-          \    os.environ.setdefault(\"AWS_ACCESS_KEY_ID\", aws_access_key_id)\n \
-          \   os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\", aws_secret_access_key)\n\
-          \n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n    kf_client = MlflowClient()\n\
-          \n    versions = kf_client.get_latest_versions(model_name, stages=[\"Staging\"\
-          ])\n    if not versions:\n        raise RuntimeError(f\"No Staging version\
-          \ found for model '{model_name}'\")\n    model_uri = versions[0].source\n\
-          \n    inference_service = {\n        \"apiVersion\": \"serving.kserve.io/v1beta1\"\
-          ,\n        \"kind\": \"InferenceService\",\n        \"metadata\": {\n  \
-          \          \"name\": model_name,\n            \"namespace\": namespace,\n\
-          \            \"annotations\": {\"sidecar.istio.io/inject\": \"false\"},\n\
-          \        },\n        \"spec\": {\n            \"predictor\": {\n       \
-          \         \"model\": {\n                    \"modelFormat\": {\"name\":\
-          \ \"xgboost\"},\n                    \"storageUri\": model_uri,\n      \
-          \              \"resources\": {\n                        \"requests\": {\"\
-          cpu\": \"100m\", \"memory\": \"256Mi\"},\n                        \"limits\"\
-          : {\"cpu\": \"1\", \"memory\": \"1Gi\"},\n                    },\n     \
-          \           }\n            }\n        },\n    }\n\n    k8s_config.load_incluster_config()\n\
-          \    custom_api = k8s_client.CustomObjectsApi()\n    try:\n        custom_api.create_namespaced_custom_object(\n\
-          \            group=\"serving.kserve.io\",\n            version=\"v1beta1\"\
-          ,\n            namespace=namespace,\n            plural=\"inferenceservices\"\
+          \ -> None:\n    import json\n    import os\n    import mlflow\n    from\
+          \ mlflow.tracking import MlflowClient\n    from kubernetes import client\
+          \ as k8s_client, config as k8s_config\n\n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"\
+          ] = mlflow_s3_endpoint_url\n    os.environ.setdefault(\"AWS_ACCESS_KEY_ID\"\
+          , aws_access_key_id)\n    os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\"\
+          , aws_secret_access_key)\n\n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n\
+          \    kf_client = MlflowClient()\n\n    versions = kf_client.get_latest_versions(model_name,\
+          \ stages=[\"Staging\"])\n    if not versions:\n        raise RuntimeError(f\"\
+          No Staging version found for model '{model_name}'\")\n    source = versions[0].source\n\
+          \    # Convert MLFlow proxy URI to real S3 path for KServe storage-initializer.\n\
+          \    # mlflow-artifacts:/EXP/RUN/artifacts/... \u2192 s3://mlflow-artifacts/EXP/RUN/artifacts/...\n\
+          \    if source.startswith(\"mlflow-artifacts:/\"):\n        model_uri =\
+          \ \"s3://mlflow-artifacts/\" + source[len(\"mlflow-artifacts:/\"):].lstrip(\"\
+          /\")\n    else:\n        model_uri = source\n    print(f\"Model storage\
+          \ URI: {model_uri}\")\n\n    k8s_config.load_incluster_config()\n    v1_api\
+          \ = k8s_client.CoreV1Api()\n\n    # Ensure the S3 secret exists so the storage-initializer\
+          \ can pull from MinIO.\n    s3_secret_name = \"kserve-s3-creds\"\n    s3_secret\
+          \ = {\n        \"apiVersion\": \"v1\",\n        \"kind\": \"Secret\",\n\
+          \        \"metadata\": {\n            \"name\": s3_secret_name,\n      \
+          \      \"namespace\": namespace,\n            \"annotations\": {\n     \
+          \           \"serving.kserve.io/s3-endpoint\": \"minio.minio.svc.cluster.local:9000\"\
+          ,\n                \"serving.kserve.io/s3-usehttps\": \"0\",\n         \
+          \       \"serving.kserve.io/s3-region\": \"us-east-1\",\n              \
+          \  \"serving.kserve.io/s3-useanoncredential\": \"false\",\n            },\n\
+          \        },\n        \"stringData\": {\n            \"AWS_ACCESS_KEY_ID\"\
+          : os.environ.get(\"AWS_ACCESS_KEY_ID\", aws_access_key_id),\n          \
+          \  \"AWS_SECRET_ACCESS_KEY\": os.environ.get(\"AWS_SECRET_ACCESS_KEY\",\
+          \ aws_secret_access_key),\n        },\n    }\n    try:\n        v1_api.create_namespaced_secret(namespace=namespace,\
+          \ body=s3_secret)\n        print(f\"Created secret {s3_secret_name}\")\n\
+          \    except k8s_client.ApiException as e:\n        if e.status == 409:\n\
+          \            v1_api.patch_namespaced_secret(\n                name=s3_secret_name,\
+          \ namespace=namespace, body=s3_secret\n            )\n            print(f\"\
+          Updated secret {s3_secret_name}\")\n        else:\n            raise\n\n\
+          \    # Ensure the ServiceAccount that references the S3 secret exists.\n\
+          \    sa_name = \"kserve-sa\"\n    sa_body = {\n        \"apiVersion\": \"\
+          v1\",\n        \"kind\": \"ServiceAccount\",\n        \"metadata\": {\"\
+          name\": sa_name, \"namespace\": namespace},\n        \"secrets\": [{\"name\"\
+          : s3_secret_name}],\n    }\n    try:\n        v1_api.create_namespaced_service_account(namespace=namespace,\
+          \ body=sa_body)\n        print(f\"Created ServiceAccount {sa_name}\")\n\
+          \    except k8s_client.ApiException as e:\n        if e.status != 409:\n\
+          \            raise\n\n    inference_service = {\n        \"apiVersion\"\
+          : \"serving.kserve.io/v1beta1\",\n        \"kind\": \"InferenceService\"\
+          ,\n        \"metadata\": {\n            \"name\": model_name,\n        \
+          \    \"namespace\": namespace,\n            \"annotations\": {\"sidecar.istio.io/inject\"\
+          : \"false\"},\n        },\n        \"spec\": {\n            \"predictor\"\
+          : {\n                \"serviceAccountName\": sa_name,\n                \"\
+          model\": {\n                    \"modelFormat\": {\"name\": \"xgboost\"\
+          },\n                    \"storageUri\": model_uri,\n                   \
+          \ \"resources\": {\n                        \"requests\": {\"cpu\": \"100m\"\
+          , \"memory\": \"256Mi\"},\n                        \"limits\": {\"cpu\"\
+          : \"1\", \"memory\": \"1Gi\"},\n                    },\n               \
+          \ },\n            }\n        },\n    }\n\n    custom_api = k8s_client.CustomObjectsApi()\n\
+          \    try:\n        custom_api.create_namespaced_custom_object(\n       \
+          \     group=\"serving.kserve.io\",\n            version=\"v1beta1\",\n \
+          \           namespace=namespace,\n            plural=\"inferenceservices\"\
           ,\n            body=inference_service,\n        )\n        print(f\"Created\
           \ InferenceService {model_name} in {namespace}\")\n    except k8s_client.ApiException\
           \ as e:\n        if e.status == 409:\n            custom_api.patch_namespaced_custom_object(\n\
@@ -232,7 +266,7 @@ deploymentSpec:
         - -c
         - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
-          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
           \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
           \  python3 -m pip install --quiet --no-warn-script-location 'mlflow==2.13.0'\
           \ 'boto3==1.34.101' && \"$0\" \"$@\"\n"
@@ -274,7 +308,7 @@ deploymentSpec:
         - -c
         - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
-          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
           \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
           \  python3 -m pip install --quiet --no-warn-script-location 'xgboost==2.0.3'\
           \ 'scikit-learn==1.4.2' 'pandas==2.2.2' 'pyarrow==15.0.2' 'mlflow==2.13.0'\
@@ -319,6 +353,12 @@ deploymentSpec:
           \        y_prob = model.predict_proba(X_test)[:, 1]\n        auc = roc_auc_score(y_test,\
           \ y_prob)\n        acc = accuracy_score(y_test, y_pred)\n\n        mlflow.log_metrics({\"\
           auc\": auc, \"accuracy\": acc})\n        mlflow.xgboost.log_model(model,\
+          \ artifact_path=\"xgboost-model\")\n\n        # KServe xgbserver v0.13.1\
+          \ looks for .bst/.json/.ubj \u2014 not .xgb.\n        # Log model.bst alongside\
+          \ the MLflow artifact so storage-initializer\n        # downloads it and\
+          \ xgbserver can discover it.\n        import tempfile\n        with tempfile.TemporaryDirectory()\
+          \ as tmpdir:\n            bst_path = os.path.join(tmpdir, \"model.bst\"\
+          )\n            model.get_booster().save_model(bst_path)\n            mlflow.log_artifact(bst_path,\
           \ artifact_path=\"xgboost-model\")\n\n        model.save_model(output_model.path\
           \ + \".json\")\n        output_model.metadata[\"run_id\"] = run.info.run_id\n\
           \        output_model.metadata[\"model_uri\"] = f\"runs:/{run.info.run_id}/xgboost-model\"\
@@ -329,8 +369,6 @@ deploymentSpec:
         resources:
           accelerator:
             count: '1'
-            resourceCount: '1'
-            resourceType: nvidia.com/gpu
             type: nvidia.com/gpu
 pipelineInfo:
   description: Train XGBoost fraud detector from Iceberg data, register in MLFlow,
@@ -338,6 +376,12 @@ pipelineInfo:
   name: fraud-training-pipeline
 root:
   dag:
+    outputs:
+      artifacts:
+        train-model-metrics:
+          artifactSelectors:
+          - outputArtifactKey: metrics
+            producerSubtask: train-model
     tasks:
       data-ingestion:
         cachingOptions: {}
@@ -479,8 +523,14 @@ root:
         defaultValue: quickstart_catalog
         isOptional: true
         parameterType: STRING
+  outputDefinitions:
+    artifacts:
+      train-model-metrics:
+        artifactType:
+          schemaTitle: system.Metrics
+          schemaVersion: 0.0.1
 schemaVersion: 2.1.0
-sdkVersion: kfp-2.13.0
+sdkVersion: kfp-2.7.0
 ---
 platforms:
   kubernetes:
