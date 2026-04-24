@@ -438,6 +438,26 @@ spec:
         kind: DestinationRule
         name: ml-pipeline-ui
         namespace: kubeflow
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline-ui
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-ui
+                  env:
+                    - name: CLUSTER_NAME
+                      value: "fraud-gitops"
+                    - name: PROJECT_ID
+                      value: "local"
+      target:
+        kind: Deployment
+        name: ml-pipeline-ui
+        namespace: kubeflow
     - patch: |-
         - op: add
           path: /spec/template/spec/containers/0/args/-
