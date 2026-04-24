@@ -21,6 +21,7 @@ def train_model(
     aws_secret_access_key: str,
     output_model: Output[Model],
     metrics: Output[Metrics],
+    model_name: str = "fraud-detector",
 ) -> None:
     import os
     import mlflow
@@ -74,14 +75,13 @@ def train_model(
         mlflow.log_metrics({"auc": auc, "accuracy": acc})
         mlflow.xgboost.log_model(model, artifact_path="xgboost-model")
 
-        # KServe xgbserver v0.13.1 looks for .bst/.json/.ubj — not .xgb.
-        # Log model.bst alongside the MLflow artifact so storage-initializer
-        # downloads it and xgbserver can discover it.
+        # KServe xgbserver v0.13.1 looks for {inferenceservice_name}.json/.bst/.ubj.
+        # Save in JSON text format with the InferenceService name so it is discovered.
         import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
-            bst_path = os.path.join(tmpdir, "model.bst")
-            model.get_booster().save_model(bst_path)
-            mlflow.log_artifact(bst_path, artifact_path="xgboost-model")
+            json_path = os.path.join(tmpdir, f"{model_name}.json")
+            model.get_booster().save_model(json_path)
+            mlflow.log_artifact(json_path, artifact_path="xgboost-model")
 
         model.save_model(output_model.path + ".json")
         output_model.metadata["run_id"] = run.info.run_id
@@ -90,4 +90,4 @@ def train_model(
         metrics.log_metric("auc", auc)
         metrics.log_metric("accuracy", acc)
 
-        print(f"Run ID: {run.info.run_id}  AUC: {auc:.4f}  Accuracy: {acc:.4f}  device: {device}")
+        print(f"Run ID: {run.info.run_id}  AUC: {auc:.4f}  Accuracy: {acc:.4f}  device: {device}", flush=True)

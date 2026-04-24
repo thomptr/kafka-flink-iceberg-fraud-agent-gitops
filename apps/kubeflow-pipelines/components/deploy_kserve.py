@@ -16,6 +16,7 @@ def deploy_kserve(
 ) -> None:
     import json
     import os
+    import sys
     import mlflow
     from mlflow.tracking import MlflowClient
     from kubernetes import client as k8s_client, config as k8s_config
@@ -37,7 +38,7 @@ def deploy_kserve(
         model_uri = "s3://mlflow-artifacts/" + source[len("mlflow-artifacts:/"):].lstrip("/")
     else:
         model_uri = source
-    print(f"Model storage URI: {model_uri}")
+    print(f"Model storage URI: {model_uri}", flush=True)
 
     k8s_config.load_incluster_config()
     v1_api = k8s_client.CoreV1Api()
@@ -64,13 +65,13 @@ def deploy_kserve(
     }
     try:
         v1_api.create_namespaced_secret(namespace=namespace, body=s3_secret)
-        print(f"Created secret {s3_secret_name}")
+        print(f"Created secret {s3_secret_name}", flush=True)
     except k8s_client.ApiException as e:
         if e.status == 409:
             v1_api.patch_namespaced_secret(
                 name=s3_secret_name, namespace=namespace, body=s3_secret
             )
-            print(f"Updated secret {s3_secret_name}")
+            print(f"Updated secret {s3_secret_name}", flush=True)
         else:
             raise
 
@@ -84,7 +85,7 @@ def deploy_kserve(
     }
     try:
         v1_api.create_namespaced_service_account(namespace=namespace, body=sa_body)
-        print(f"Created ServiceAccount {sa_name}")
+        print(f"Created ServiceAccount {sa_name}", flush=True)
     except k8s_client.ApiException as e:
         if e.status != 409:
             raise
@@ -121,7 +122,7 @@ def deploy_kserve(
             plural="inferenceservices",
             body=inference_service,
         )
-        print(f"Created InferenceService {model_name} in {namespace}")
+        print(f"Created InferenceService {model_name} in {namespace}", flush=True)
     except k8s_client.ApiException as e:
         if e.status == 409:
             custom_api.patch_namespaced_custom_object(
@@ -132,6 +133,6 @@ def deploy_kserve(
                 name=model_name,
                 body=inference_service,
             )
-            print(f"Updated InferenceService {model_name} in {namespace}")
+            print(f"Updated InferenceService {model_name} in {namespace}", flush=True)
         else:
             raise

@@ -51,6 +51,7 @@ def fraud_training_pipeline(
         mlflow_s3_endpoint_url=minio_endpoint,
         aws_access_key_id="minioadmin",
         aws_secret_access_key="minioadmin",
+        model_name=model_name,
     )
     use_secret_as_env(
         train_task,

@@ -93,6 +93,10 @@ components:
           parameterType: STRING
         mlflow_tracking_uri:
           parameterType: STRING
+        model_name:
+          defaultValue: fraud-detector
+          isOptional: true
+          parameterType: STRING
     outputDefinitions:
       artifacts:
         metrics:
@@ -190,9 +194,9 @@ deploymentSpec:
           \ *\n\ndef deploy_kserve(\n    trained_model: Input[Model],\n    model_name:\
           \ str,\n    namespace: str,\n    mlflow_tracking_uri: str,\n    mlflow_s3_endpoint_url:\
           \ str,\n    aws_access_key_id: str,\n    aws_secret_access_key: str,\n)\
-          \ -> None:\n    import json\n    import os\n    import mlflow\n    from\
-          \ mlflow.tracking import MlflowClient\n    from kubernetes import client\
-          \ as k8s_client, config as k8s_config\n\n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"\
+          \ -> None:\n    import json\n    import os\n    import sys\n    import mlflow\n\
+          \    from mlflow.tracking import MlflowClient\n    from kubernetes import\
+          \ client as k8s_client, config as k8s_config\n\n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"\
           ] = mlflow_s3_endpoint_url\n    os.environ.setdefault(\"AWS_ACCESS_KEY_ID\"\
           , aws_access_key_id)\n    os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\"\
           , aws_secret_access_key)\n\n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n\
@@ -204,31 +208,31 @@ deploymentSpec:
           \    if source.startswith(\"mlflow-artifacts:/\"):\n        model_uri =\
           \ \"s3://mlflow-artifacts/\" + source[len(\"mlflow-artifacts:/\"):].lstrip(\"\
           /\")\n    else:\n        model_uri = source\n    print(f\"Model storage\
-          \ URI: {model_uri}\")\n\n    k8s_config.load_incluster_config()\n    v1_api\
-          \ = k8s_client.CoreV1Api()\n\n    # Ensure the S3 secret exists so the storage-initializer\
-          \ can pull from MinIO.\n    s3_secret_name = \"kserve-s3-creds\"\n    s3_secret\
-          \ = {\n        \"apiVersion\": \"v1\",\n        \"kind\": \"Secret\",\n\
-          \        \"metadata\": {\n            \"name\": s3_secret_name,\n      \
-          \      \"namespace\": namespace,\n            \"annotations\": {\n     \
-          \           \"serving.kserve.io/s3-endpoint\": \"minio.minio.svc.cluster.local:9000\"\
-          ,\n                \"serving.kserve.io/s3-usehttps\": \"0\",\n         \
-          \       \"serving.kserve.io/s3-region\": \"us-east-1\",\n              \
-          \  \"serving.kserve.io/s3-useanoncredential\": \"false\",\n            },\n\
-          \        },\n        \"stringData\": {\n            \"AWS_ACCESS_KEY_ID\"\
-          : os.environ.get(\"AWS_ACCESS_KEY_ID\", aws_access_key_id),\n          \
-          \  \"AWS_SECRET_ACCESS_KEY\": os.environ.get(\"AWS_SECRET_ACCESS_KEY\",\
-          \ aws_secret_access_key),\n        },\n    }\n    try:\n        v1_api.create_namespaced_secret(namespace=namespace,\
-          \ body=s3_secret)\n        print(f\"Created secret {s3_secret_name}\")\n\
+          \ URI: {model_uri}\", flush=True)\n\n    k8s_config.load_incluster_config()\n\
+          \    v1_api = k8s_client.CoreV1Api()\n\n    # Ensure the S3 secret exists\
+          \ so the storage-initializer can pull from MinIO.\n    s3_secret_name =\
+          \ \"kserve-s3-creds\"\n    s3_secret = {\n        \"apiVersion\": \"v1\"\
+          ,\n        \"kind\": \"Secret\",\n        \"metadata\": {\n            \"\
+          name\": s3_secret_name,\n            \"namespace\": namespace,\n       \
+          \     \"annotations\": {\n                \"serving.kserve.io/s3-endpoint\"\
+          : \"minio.minio.svc.cluster.local:9000\",\n                \"serving.kserve.io/s3-usehttps\"\
+          : \"0\",\n                \"serving.kserve.io/s3-region\": \"us-east-1\"\
+          ,\n                \"serving.kserve.io/s3-useanoncredential\": \"false\"\
+          ,\n            },\n        },\n        \"stringData\": {\n            \"\
+          AWS_ACCESS_KEY_ID\": os.environ.get(\"AWS_ACCESS_KEY_ID\", aws_access_key_id),\n\
+          \            \"AWS_SECRET_ACCESS_KEY\": os.environ.get(\"AWS_SECRET_ACCESS_KEY\"\
+          , aws_secret_access_key),\n        },\n    }\n    try:\n        v1_api.create_namespaced_secret(namespace=namespace,\
+          \ body=s3_secret)\n        print(f\"Created secret {s3_secret_name}\", flush=True)\n\
           \    except k8s_client.ApiException as e:\n        if e.status == 409:\n\
           \            v1_api.patch_namespaced_secret(\n                name=s3_secret_name,\
           \ namespace=namespace, body=s3_secret\n            )\n            print(f\"\
-          Updated secret {s3_secret_name}\")\n        else:\n            raise\n\n\
-          \    # Ensure the ServiceAccount that references the S3 secret exists.\n\
-          \    sa_name = \"kserve-sa\"\n    sa_body = {\n        \"apiVersion\": \"\
-          v1\",\n        \"kind\": \"ServiceAccount\",\n        \"metadata\": {\"\
-          name\": sa_name, \"namespace\": namespace},\n        \"secrets\": [{\"name\"\
-          : s3_secret_name}],\n    }\n    try:\n        v1_api.create_namespaced_service_account(namespace=namespace,\
-          \ body=sa_body)\n        print(f\"Created ServiceAccount {sa_name}\")\n\
+          Updated secret {s3_secret_name}\", flush=True)\n        else:\n        \
+          \    raise\n\n    # Ensure the ServiceAccount that references the S3 secret\
+          \ exists.\n    sa_name = \"kserve-sa\"\n    sa_body = {\n        \"apiVersion\"\
+          : \"v1\",\n        \"kind\": \"ServiceAccount\",\n        \"metadata\":\
+          \ {\"name\": sa_name, \"namespace\": namespace},\n        \"secrets\": [{\"\
+          name\": s3_secret_name}],\n    }\n    try:\n        v1_api.create_namespaced_service_account(namespace=namespace,\
+          \ body=sa_body)\n        print(f\"Created ServiceAccount {sa_name}\", flush=True)\n\
           \    except k8s_client.ApiException as e:\n        if e.status != 409:\n\
           \            raise\n\n    inference_service = {\n        \"apiVersion\"\
           : \"serving.kserve.io/v1beta1\",\n        \"kind\": \"InferenceService\"\
@@ -246,13 +250,14 @@ deploymentSpec:
           \     group=\"serving.kserve.io\",\n            version=\"v1beta1\",\n \
           \           namespace=namespace,\n            plural=\"inferenceservices\"\
           ,\n            body=inference_service,\n        )\n        print(f\"Created\
-          \ InferenceService {model_name} in {namespace}\")\n    except k8s_client.ApiException\
-          \ as e:\n        if e.status == 409:\n            custom_api.patch_namespaced_custom_object(\n\
-          \                group=\"serving.kserve.io\",\n                version=\"\
-          v1beta1\",\n                namespace=namespace,\n                plural=\"\
-          inferenceservices\",\n                name=model_name,\n               \
-          \ body=inference_service,\n            )\n            print(f\"Updated InferenceService\
-          \ {model_name} in {namespace}\")\n        else:\n            raise\n\n"
+          \ InferenceService {model_name} in {namespace}\", flush=True)\n    except\
+          \ k8s_client.ApiException as e:\n        if e.status == 409:\n         \
+          \   custom_api.patch_namespaced_custom_object(\n                group=\"\
+          serving.kserve.io\",\n                version=\"v1beta1\",\n           \
+          \     namespace=namespace,\n                plural=\"inferenceservices\"\
+          ,\n                name=model_name,\n                body=inference_service,\n\
+          \            )\n            print(f\"Updated InferenceService {model_name}\
+          \ in {namespace}\", flush=True)\n        else:\n            raise\n\n"
         image: python:3.11-slim
     exec-register-model:
       container:
@@ -327,44 +332,45 @@ deploymentSpec:
           \ *\n\ndef train_model(\n    input_dataset: Input[Dataset],\n    mlflow_tracking_uri:\
           \ str,\n    experiment_name: str,\n    mlflow_s3_endpoint_url: str,\n  \
           \  aws_access_key_id: str,\n    aws_secret_access_key: str,\n    output_model:\
-          \ Output[Model],\n    metrics: Output[Metrics],\n) -> None:\n    import\
-          \ os\n    import mlflow\n    import mlflow.xgboost\n    import pandas as\
-          \ pd\n    import xgboost as xgb\n    from sklearn.model_selection import\
-          \ train_test_split\n    from sklearn.metrics import roc_auc_score, accuracy_score\n\
-          \n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"] = mlflow_s3_endpoint_url\n\
-          \    # Prefer env vars injected from k8s secret over explicit params\n \
-          \   os.environ.setdefault(\"AWS_ACCESS_KEY_ID\", aws_access_key_id)\n  \
-          \  os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\", aws_secret_access_key)\n\
-          \n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n    mlflow.set_experiment(experiment_name)\n\
-          \n    df = pd.read_parquet(input_dataset.path)\n    X = df[[\"amount\",\
-          \ \"amount_velocity_5min\", \"distance_from_home_km\"]]\n    y = df[\"label\"\
-          ]\n    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2,\
-          \ random_state=42)\n\n    mlflow.xgboost.autolog()\n    with mlflow.start_run()\
-          \ as run:\n        # Try GPU first; fall back to hist (CPU) if no CUDA device\
-          \ available\n        try:\n            import subprocess\n            subprocess.run([\"\
-          nvidia-smi\"], check=True, capture_output=True)\n            tree_method\
-          \ = \"gpu_hist\"\n            device = \"cuda\"\n        except Exception:\n\
-          \            tree_method = \"hist\"\n            device = \"cpu\"\n\n  \
-          \      model = xgb.XGBClassifier(\n            n_estimators=100,\n     \
-          \       max_depth=6,\n            learning_rate=0.1,\n            tree_method=tree_method,\n\
-          \            device=device,\n            eval_metric=\"auc\",\n        \
-          \    use_label_encoder=False,\n        )\n        model.fit(X_train, y_train,\
-          \ eval_set=[(X_test, y_test)], verbose=False)\n\n        y_pred = model.predict(X_test)\n\
-          \        y_prob = model.predict_proba(X_test)[:, 1]\n        auc = roc_auc_score(y_test,\
+          \ Output[Model],\n    metrics: Output[Metrics],\n    model_name: str = \"\
+          fraud-detector\",\n) -> None:\n    import os\n    import mlflow\n    import\
+          \ mlflow.xgboost\n    import pandas as pd\n    import xgboost as xgb\n \
+          \   from sklearn.model_selection import train_test_split\n    from sklearn.metrics\
+          \ import roc_auc_score, accuracy_score\n\n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"\
+          ] = mlflow_s3_endpoint_url\n    # Prefer env vars injected from k8s secret\
+          \ over explicit params\n    os.environ.setdefault(\"AWS_ACCESS_KEY_ID\"\
+          , aws_access_key_id)\n    os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\"\
+          , aws_secret_access_key)\n\n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n\
+          \    mlflow.set_experiment(experiment_name)\n\n    df = pd.read_parquet(input_dataset.path)\n\
+          \    X = df[[\"amount\", \"amount_velocity_5min\", \"distance_from_home_km\"\
+          ]]\n    y = df[\"label\"]\n    X_train, X_test, y_train, y_test = train_test_split(X,\
+          \ y, test_size=0.2, random_state=42)\n\n    mlflow.xgboost.autolog()\n \
+          \   with mlflow.start_run() as run:\n        # Try GPU first; fall back\
+          \ to hist (CPU) if no CUDA device available\n        try:\n            import\
+          \ subprocess\n            subprocess.run([\"nvidia-smi\"], check=True, capture_output=True)\n\
+          \            tree_method = \"gpu_hist\"\n            device = \"cuda\"\n\
+          \        except Exception:\n            tree_method = \"hist\"\n       \
+          \     device = \"cpu\"\n\n        model = xgb.XGBClassifier(\n         \
+          \   n_estimators=100,\n            max_depth=6,\n            learning_rate=0.1,\n\
+          \            tree_method=tree_method,\n            device=device,\n    \
+          \        eval_metric=\"auc\",\n            use_label_encoder=False,\n  \
+          \      )\n        model.fit(X_train, y_train, eval_set=[(X_test, y_test)],\
+          \ verbose=False)\n\n        y_pred = model.predict(X_test)\n        y_prob\
+          \ = model.predict_proba(X_test)[:, 1]\n        auc = roc_auc_score(y_test,\
           \ y_prob)\n        acc = accuracy_score(y_test, y_pred)\n\n        mlflow.log_metrics({\"\
           auc\": auc, \"accuracy\": acc})\n        mlflow.xgboost.log_model(model,\
           \ artifact_path=\"xgboost-model\")\n\n        # KServe xgbserver v0.13.1\
-          \ looks for .bst/.json/.ubj \u2014 not .xgb.\n        # Log model.bst alongside\
-          \ the MLflow artifact so storage-initializer\n        # downloads it and\
-          \ xgbserver can discover it.\n        import tempfile\n        with tempfile.TemporaryDirectory()\
-          \ as tmpdir:\n            bst_path = os.path.join(tmpdir, \"model.bst\"\
-          )\n            model.get_booster().save_model(bst_path)\n            mlflow.log_artifact(bst_path,\
+          \ looks for {inferenceservice_name}.json/.bst/.ubj.\n        # Save in JSON\
+          \ text format with the InferenceService name so it is discovered.\n    \
+          \    import tempfile\n        with tempfile.TemporaryDirectory() as tmpdir:\n\
+          \            json_path = os.path.join(tmpdir, f\"{model_name}.json\")\n\
+          \            model.get_booster().save_model(json_path)\n            mlflow.log_artifact(json_path,\
           \ artifact_path=\"xgboost-model\")\n\n        model.save_model(output_model.path\
           \ + \".json\")\n        output_model.metadata[\"run_id\"] = run.info.run_id\n\
           \        output_model.metadata[\"model_uri\"] = f\"runs:/{run.info.run_id}/xgboost-model\"\
           \n\n        metrics.log_metric(\"auc\", auc)\n        metrics.log_metric(\"\
           accuracy\", acc)\n\n        print(f\"Run ID: {run.info.run_id}  AUC: {auc:.4f}\
-          \  Accuracy: {acc:.4f}  device: {device}\")\n\n"
+          \  Accuracy: {acc:.4f}  device: {device}\", flush=True)\n\n"
         image: python:3.11-slim
         resources:
           accelerator:
@@ -491,6 +497,8 @@ root:
               componentInputParameter: minio_endpoint
             mlflow_tracking_uri:
               componentInputParameter: mlflow_tracking_uri
+            model_name:
+              componentInputParameter: model_name
         taskInfo:
           name: train-model
   inputDefinitions:
