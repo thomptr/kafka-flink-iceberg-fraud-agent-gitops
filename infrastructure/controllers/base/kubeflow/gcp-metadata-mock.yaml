@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-metadata-mock-config
+  namespace: kubeflow
+data:
+  nginx.conf: |
+    events {}
+    http {
+      server {
+        listen 80;
+        location /computeMetadata/v1/instance/attributes/cluster-name {
+          add_header Content-Type text/plain;
+          return 200 'fraud-gitops';
+        }
+        location /computeMetadata/v1/instance/attributes/project-id {
+          add_header Content-Type text/plain;
+          return 200 'local';
+        }
+        location /computeMetadata/v1/project/project-id {
+          add_header Content-Type text/plain;
+          return 200 'local';
+        }
+        location / {
+          add_header Content-Type text/plain;
+          return 200 'ok';
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcp-metadata-mock
+  namespace: kubeflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gcp-metadata-mock
+  template:
+    metadata:
+      labels:
+        app: gcp-metadata-mock
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+      volumes:
+        - name: config
+          configMap:
+            name: gcp-metadata-mock-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metadata
+  namespace: kubeflow
+spec:
+  selector:
+    app: gcp-metadata-mock
+  ports:
+    - port: 80
+      targetPort: 80
