@@ -438,6 +438,14 @@ spec:
         kind: DestinationRule
         name: ml-pipeline-ui
         namespace: kubeflow
+    - patch: |-
+        - op: add
+          path: /spec/template/spec/containers/0/args/-
+          value: "--grpc_channel_arguments=grpc.max_metadata_size=33554432"
+      target:
+        kind: Deployment
+        name: metadata-grpc-deployment
+        namespace: kubeflow
   images:
     - name: gcr.io/ml-pipeline/frontend
       newTag: 2.3.0
