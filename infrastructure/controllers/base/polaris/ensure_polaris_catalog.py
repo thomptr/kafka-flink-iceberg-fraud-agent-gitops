@@ -249,16 +249,27 @@ def find_latest_metadata(
     bucket: str,
     table_s3_prefix: str,
 ) -> str | None:
-    """Scan MinIO for the newest *.metadata.json under table_s3_prefix/metadata/ and
-    return its full s3:// URI, or None if no metadata files exist yet."""
+    """Scan MinIO for the highest-sequence *.metadata.json under table_s3_prefix/metadata/
+    and return its full s3:// URI, or None if no metadata files exist yet.
+
+    Iceberg metadata filenames are prefixed with a zero-padded sequence number
+    (e.g. 01183-<uuid>.metadata.json). Sorting by this number rather than by
+    LastModified avoids picking a freshly-created empty table (sequence 00000)
+    over an older file that contains thousands of committed snapshots.
+    """
+    import re
     metadata_prefix = table_s3_prefix.rstrip("/") + "/metadata/"
     paginator = s3_client.get_paginator("list_objects_v2")
-    candidates: list[tuple] = []  # (last_modified, key)
+    candidates: list[tuple] = []  # (sequence_int, key)
     for page in paginator.paginate(Bucket=bucket, Prefix=metadata_prefix):
         for obj in page.get("Contents", []):
             key = obj["Key"]
-            if key.endswith(".metadata.json"):
-                candidates.append((obj["LastModified"], key))
+            if not key.endswith(".metadata.json"):
+                continue
+            filename = key.rsplit("/", 1)[-1]
+            m = re.match(r"^(\d+)-", filename)
+            seq = int(m.group(1)) if m else -1
+            candidates.append((seq, key))
     if not candidates:
         return None
     candidates.sort(key=lambda x: x[0], reverse=True)
