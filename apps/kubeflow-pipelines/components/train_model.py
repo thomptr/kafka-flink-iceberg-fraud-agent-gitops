@@ -40,7 +40,30 @@ def train_model(
     mlflow.set_experiment(experiment_name)
 
     df = pd.read_parquet(input_dataset.path)
-    X = df[["amount", "amount_velocity_5min", "distance_from_home_km"]]
+
+    FEATURE_COLS = [
+        # Original features from lakehouse
+        "amount", "amount_velocity_5min", "distance_from_home_km",
+        # Rolling amount aggregations per user
+        "amount_avg_1h", "amount_max_1h", "amount_min_1h",
+        "amount_avg_6h", "amount_max_6h", "amount_min_6h",
+        "amount_avg_24h", "amount_max_24h", "amount_min_24h",
+        "amount_avg_7d", "amount_max_7d", "amount_min_7d",
+        # Transaction velocity counts per user
+        "tx_count_1h", "tx_count_24h",
+        # Time-based cyclic features
+        "hour_of_day", "day_of_week", "is_weekend", "is_night",
+        "hour_sin", "hour_cos", "dow_sin", "dow_cos",
+        # Transaction frequency pattern
+        "seconds_since_last_tx",
+        # Geospatial / risk features
+        "distance_from_last_location_km", "speed_km_per_hour",
+        "is_impossible_travel", "avg_distance_from_home_24h",
+    ]
+    # Keep only columns that exist in the dataset (graceful degradation when
+    # feature_engineering ran without coordinates)
+    available_cols = [c for c in FEATURE_COLS if c in df.columns]
+    X = df[available_cols].astype(float)
     y = df["label"]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -55,6 +78,9 @@ def train_model(
         except Exception:
             tree_method = "hist"
             device = "cpu"
+
+        mlflow.log_param("n_features", len(available_cols))
+        mlflow.log_param("feature_cols", ",".join(available_cols))
 
         model = xgb.XGBClassifier(
             n_estimators=100,
@@ -90,4 +116,5 @@ def train_model(
         metrics.log_metric("auc", auc)
         metrics.log_metric("accuracy", acc)
 
-        print(f"Run ID: {run.info.run_id}  AUC: {auc:.4f}  Accuracy: {acc:.4f}  device: {device}", flush=True)
+        print(f"Run ID: {run.info.run_id}  AUC: {auc:.4f}  Accuracy: {acc:.4f}  "
+              f"device: {device}  n_features: {len(available_cols)}", flush=True)

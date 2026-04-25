@@ -55,7 +55,22 @@ def data_ingestion(
         (df["amount_velocity_5min"] > vel_threshold) |
         (df["distance_from_home_km"] > dist_threshold)
     ).astype(int)
-    df = df[["amount", "amount_velocity_5min", "distance_from_home_km", "label"]].dropna()
+
+    df["transaction_time"] = pd.to_datetime(df["transaction_time"])
+
+    # Dynamically include any coordinate columns present in the schema.
+    # Common names vary by source system; include all candidates that exist.
+    COORD_CANDIDATES = {
+        "merchant_lat", "merchant_lon",
+        "latitude", "longitude",
+        "lat", "lon",
+    }
+    coord_cols = [c for c in df.columns if c.lower() in COORD_CANDIDATES]
+
+    base_cols = ["user_id", "transaction_time", "amount",
+                 "amount_velocity_5min", "distance_from_home_km", "label"]
+    df = df[base_cols + coord_cols].dropna(subset=["amount", "label"])
 
     df.to_parquet(output_dataset.path, index=False)
-    print(f"Ingested {len(df)} rows; fraud rate: {df['label'].mean():.3f}")
+    print(f"Ingested {len(df)} rows; fraud rate: {df['label'].mean():.3f}; "
+          f"coord cols: {coord_cols or 'none'}")

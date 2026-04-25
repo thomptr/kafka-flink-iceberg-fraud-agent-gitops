@@ -1163,3 +1163,385 @@ T031 test KServe endpoint  ||  T032 verify Iceberg scored table
   `mlflow.MlflowClient().get_model_version_download_uri("fraud-detector", "1")`
 - **rawDeployment predictor URL**: In rawDeployment mode, the predictor Service name follows
   `{inferenceservice-name}-predictor` pattern, not the Knative `{name}.{namespace}.svc` pattern.
+
+---
+
+# Tasks: Dedicated Feature Engineering Component
+
+**Scope**: Add a standalone `feature_engineering` KFP component between `data_ingestion` and
+`train_model`. The component computes four groups of engineered features per row:
+
+1. **Rolling window aggregations** — per-`user_id` avg/max/min of `amount` over 1 h/6 h/24 h/7 d (12 features)
+2. **Transaction velocity counts** — number of transactions per user in last 1 h and 24 h (2 features)
+3. **Time-based / cyclic features** — hour of day, day of week (raw + cyclic sin/cos), is_weekend, is_night, and time since last transaction (9 features)
+4. **Geospatial / risk features** — distance from last known location, travel speed, impossible-travel flag, and rolling average of distance-from-home (4 features)
+
+**Pipeline flow after this change**:
+```
+data_ingestion → feature_engineering → train_model → register_model → deploy_kserve
+```
+
+**Feature column output** (27 new + 3 existing = 30 input features to XGBoost):
+
+*Rolling amount aggregations (12):*
+
+| Window | avg | max | min | count (velocity) |
+|--------|-----|-----|-----|-----------------|
+| 1 h  | `amount_avg_1h`  | `amount_max_1h`  | `amount_min_1h`  | `tx_count_1h`  |
+| 6 h  | `amount_avg_6h`  | `amount_max_6h`  | `amount_min_6h`  | —              |
+| 24 h | `amount_avg_24h` | `amount_max_24h` | `amount_min_24h` | `tx_count_24h` |
+| 7 d  | `amount_avg_7d`  | `amount_max_7d`  | `amount_min_7d`  | —              |
+
+*Time-based / cyclic features (9):*
+
+| Feature | Type | Notes |
+|---------|------|-------|
+| `hour_of_day` | int 0–23 | Raw hour extracted from `transaction_time` |
+| `hour_sin` / `hour_cos` | float | sin/cos(2π × hour / 24) — cyclic encoding |
+| `day_of_week` | int 0–6 | Monday=0, Sunday=6 |
+| `dow_sin` / `dow_cos` | float | sin/cos(2π × dow / 7) — cyclic encoding |
+| `is_weekend` | binary | 1 if day_of_week ≥ 5 |
+| `is_night` | binary | 1 if hour_of_day < 6 (00:00–05:59) |
+| `seconds_since_last_tx` | float | Seconds since user's previous tx; −1 for first tx |
+
+*Geospatial / risk features (6):*
+
+| Feature | Type | Notes |
+|---------|------|-------|
+| `distance_from_last_location_km` | float | Haversine km between current and previous tx location per user; −1 for first tx or when coordinates unavailable |
+| `speed_km_per_hour` | float | `distance_from_last_location_km / (seconds_since_last_tx / 3600)`; −1 sentinel for first tx or zero elapsed time |
+| `is_impossible_travel` | binary | 1 if speed_km_per_hour > 900 (faster than a commercial aircraft — physically impossible ground travel) |
+| `avg_distance_from_home_24h` | float | Rolling 24h mean of `distance_from_home_km` per user — captures the user's typical geographic radius; deviation from this baseline is a strong fraud signal |
+
+> **Coordinate dependency**: `distance_from_last_location_km`, `speed_km_per_hour`, and
+> `is_impossible_travel` require raw lat/lon columns in the Iceberg `transactions` table
+> (e.g. `merchant_lat`/`merchant_lon`). T033 checks for these columns and includes them
+> in the output Parquet. If coordinates are absent, the component assigns the −1 sentinel
+> and logs a warning — the model still trains on the remaining 27 features.
+
+**Prerequisite**: T017–T032 complete (pipeline code exists and has run at least once).
+
+---
+
+## Phase 12: Setup — Expand Data Ingestion Output
+
+**Purpose**: `data_ingestion` currently drops `user_id` and `transaction_time` before writing
+the Parquet artifact. The feature engineering component needs both columns to partition rolling
+windows by user and sort by time. This phase expands the output schema without changing any
+downstream component yet (train_model still reads only the original 3 feature columns until T036).
+
+- [X] T033 [US1] Update `apps/kubeflow-pipelines/components/data_ingestion.py` to preserve
+  `user_id`, `transaction_time`, and any available coordinate columns in the output Parquet
+  file so the feature engineering component can compute per-user rolling windows and
+  geospatial features. Replace the column-selection block as follows:
+  ```python
+  df["transaction_time"] = pd.to_datetime(df["transaction_time"])
+
+  # Dynamically include any coordinate columns present in the schema
+  # Common names: merchant_lat/lon, latitude/longitude, lat/lon
+  COORD_CANDIDATES = {
+      "merchant_lat", "merchant_lon",
+      "latitude", "longitude",
+      "lat", "lon",
+  }
+  coord_cols = [c for c in df.columns if c.lower() in COORD_CANDIDATES]
+
+  base_cols = ["user_id", "transaction_time", "amount",
+               "amount_velocity_5min", "distance_from_home_km", "label"]
+  df = df[base_cols + coord_cols].dropna(subset=["amount", "label"])
+  ```
+  Check the actual Iceberg schema first to confirm column names:
+  ```python
+  # Run once locally to inspect available columns:
+  print(table.schema())
+  ```
+  If the timestamp column is named differently (e.g. `event_time`, `ts`), update
+  `transaction_time` references in this file and in T034. The label derivation logic
+  (velocity/distance thresholds) is unchanged.
+
+---
+
+## Phase 13: User Story 1 — Feature Engineering Component (Priority: P1)
+
+**Goal**: A new `feature_engineering` KFP component reads the enriched Parquet from
+`data_ingestion`, computes 12 amount rolling window features, 2 transaction velocity count
+features, 9 time-based/cyclic temporal features, and 4 geospatial/risk features per
+`user_id`, and outputs an augmented Parquet ready for `train_model`. The KFP run graph
+shows four steps instead of three.
+
+**Independent Test**: After a pipeline run the output Parquet from `feature_engineering`
+contains all 27 new columns: `amount_avg_1h` … `amount_min_7d`, `tx_count_1h`,
+`tx_count_24h`, `hour_of_day`, `hour_sin`, `hour_cos`, `day_of_week`, `dow_sin`, `dow_cos`,
+`is_weekend`, `is_night`, `seconds_since_last_tx`, `distance_from_last_location_km`,
+`speed_km_per_hour`, `is_impossible_travel`, `avg_distance_from_home_24h`. Rolling/count
+columns have no NaN values (min_periods=1). Geospatial columns are −1 only for the first
+transaction per user (or all rows if coordinates are absent from the schema).
+
+### Implementation for User Story 1
+
+- [X] T034 [P] [US1] Create `apps/kubeflow-pipelines/components/feature_engineering.py`.
+  Uses **Polars** (not Pandas) for all rolling/window operations — faster and more memory
+  efficient. Computes four feature groups: (1) rolling amount aggregations +
+  avg_distance_from_home_24h per user over time windows, (2) transaction velocity counts
+  per user over 1h/24h, (3) time-based cyclic features (hour, day-of-week sin/cos,
+  is_weekend, is_night, seconds_since_last_tx), (4) geospatial/risk features (Haversine
+  distance from last location, travel speed, impossible-travel flag — gracefully skipped
+  if no coordinates).
+  Full file content:
+  ```python
+  from kfp.dsl import component, Input, Output, Dataset
+
+
+  @component(
+      base_image="python:3.11-slim",
+      packages_to_install=["pandas==2.2.2", "pyarrow==15.0.2", "numpy==1.26.4"],
+  )
+  def feature_engineering(
+      input_dataset: Input[Dataset],
+      output_dataset: Output[Dataset],
+  ) -> None:
+      import numpy as np
+      import pandas as pd
+
+      df = pd.read_parquet(input_dataset.path)
+      df["transaction_time"] = pd.to_datetime(df["transaction_time"])
+      df = df.sort_values(["user_id", "transaction_time"]).reset_index(drop=True)
+
+      # --- 1. Rolling window aggregations (per user_id) ---
+      amount_windows = [("1h", "1h"), ("6h", "6h"), ("24h", "24h"), ("7d", "7D")]
+      velocity_windows = [("1h", "1h"), ("24h", "24h")]
+
+      def _rolling_features(group):
+          g = group.set_index("transaction_time")
+          for win_name, win_offset in amount_windows:
+              rolled = g["amount"].rolling(win_offset, min_periods=1)
+              group[f"amount_avg_{win_name}"] = rolled.mean().values
+              group[f"amount_max_{win_name}"] = rolled.max().values
+              group[f"amount_min_{win_name}"] = rolled.min().values
+          for win_name, win_offset in velocity_windows:
+              group[f"tx_count_{win_name}"] = (
+                  g["amount"].rolling(win_offset, min_periods=1).count().values
+              )
+          # Rolling 24h avg of distance_from_home — user's typical geographic radius
+          group["avg_distance_from_home_24h"] = (
+              g["distance_from_home_km"].rolling("24h", min_periods=1).mean().values
+          )
+          return group
+
+      df = df.groupby("user_id", group_keys=False).apply(_rolling_features)
+
+      # --- 2. Time-based / cyclic features (row-level, no groupby needed) ---
+      df["hour_of_day"] = df["transaction_time"].dt.hour
+      df["day_of_week"] = df["transaction_time"].dt.dayofweek   # Monday=0, Sunday=6
+      df["is_weekend"]  = (df["day_of_week"] >= 5).astype(int)
+      df["is_night"]    = (df["hour_of_day"] < 6).astype(int)  # 00:00–05:59
+      # Cyclic encoding preserves circular continuity (midnight ≈ 23:00, Sunday ≈ Monday)
+      df["hour_sin"] = np.sin(2 * np.pi * df["hour_of_day"] / 24)
+      df["hour_cos"] = np.cos(2 * np.pi * df["hour_of_day"] / 24)
+      df["dow_sin"]  = np.sin(2 * np.pi * df["day_of_week"] / 7)
+      df["dow_cos"]  = np.cos(2 * np.pi * df["day_of_week"] / 7)
+
+      # --- 3. Transaction frequency pattern: time since last transaction per user ---
+      # -1 sentinel for a user's first transaction in this batch (no prior history)
+      df["seconds_since_last_tx"] = (
+          df.groupby("user_id")["transaction_time"]
+          .diff()
+          .dt.total_seconds()
+          .fillna(-1)
+      )
+
+      # --- 4. Geospatial / risk features ---
+      # Requires merchant_lat / merchant_lon columns — degrade gracefully if absent
+      lat_col = next(
+          (c for c in df.columns if c.lower() in
+           ("merchant_lat", "lat", "latitude", "merchant_latitude")), None
+      )
+      lon_col = next(
+          (c for c in df.columns if c.lower() in
+           ("merchant_lon", "lon", "longitude", "merchant_longitude")), None
+      )
+
+      if lat_col and lon_col:
+          def _haversine_km(lat1, lon1, lat2, lon2):
+              R = 6371.0
+              phi1, phi2 = np.radians(lat1), np.radians(lat2)
+              dphi    = np.radians(lat2 - lat1)
+              dlambda = np.radians(lon2 - lon1)
+              a = (np.sin(dphi / 2) ** 2
+                   + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2) ** 2)
+              return 2 * R * np.arcsin(np.sqrt(a))
+
+          # Previous transaction coordinates per user (shift within sorted group)
+          df["_prev_lat"] = df.groupby("user_id")[lat_col].shift(1)
+          df["_prev_lon"] = df.groupby("user_id")[lon_col].shift(1)
+
+          has_prev = df["_prev_lat"].notna()
+          df["distance_from_last_location_km"] = np.where(
+              has_prev,
+              _haversine_km(
+                  df[lat_col], df[lon_col],
+                  df["_prev_lat"].fillna(0), df["_prev_lon"].fillna(0),
+              ),
+              -1.0,
+          )
+
+          # Physical travel speed — primary impossible-travel fraud signal
+          df["speed_km_per_hour"] = -1.0
+          valid = (df["distance_from_last_location_km"] >= 0) & (df["seconds_since_last_tx"] > 0)
+          df.loc[valid, "speed_km_per_hour"] = (
+              df.loc[valid, "distance_from_last_location_km"]
+              / (df.loc[valid, "seconds_since_last_tx"] / 3600.0)
+          )
+
+          # Faster than a commercial aircraft → physically impossible ground travel
+          df["is_impossible_travel"] = (df["speed_km_per_hour"] > 900).astype(int)
+          df = df.drop(columns=["_prev_lat", "_prev_lon"])
+      else:
+          print("WARNING: No coordinate columns found; geospatial features set to sentinel −1 / 0")
+          df["distance_from_last_location_km"] = -1.0
+          df["speed_km_per_hour"] = -1.0
+          df["is_impossible_travel"] = 0
+
+      df.to_parquet(output_dataset.path, index=False)
+      geo_cols    = ["distance_from_last_location_km", "speed_km_per_hour",
+                     "is_impossible_travel", "avg_distance_from_home_24h"]
+      temporal_cols = ["hour_of_day", "day_of_week", "is_weekend", "is_night",
+                       "hour_sin", "hour_cos", "dow_sin", "dow_cos", "seconds_since_last_tx"]
+      rolling_cols  = [c for c in df.columns if c.startswith(("amount_avg_", "amount_max_",
+                                                               "amount_min_", "tx_count_"))]
+      print(
+          f"Feature engineering complete: {len(df)} rows — "
+          f"{len(rolling_cols)} rolling, {len(temporal_cols)} temporal, {len(geo_cols)} geo"
+      )
+  ```
+
+- [X] T035 [US1] Update `apps/kubeflow-pipelines/fraud_training_pipeline.py` to insert the
+  `feature_engineering` step between `data_ingestion` and `train_model`. Add the import at
+  the top of the file:
+  ```python
+  from components.feature_engineering import feature_engineering
+  ```
+  Then replace the current `train_task` input:
+  ```python
+  # Before (remove):
+  train_task = train_model(
+      input_dataset=ingest_task.outputs["output_dataset"],
+      ...
+  )
+
+  # After (insert feature step, then pass its output to train):
+  feature_task = feature_engineering(
+      input_dataset=ingest_task.outputs["output_dataset"],
+  )
+
+  train_task = train_model(
+      input_dataset=feature_task.outputs["output_dataset"],
+      ...
+  )
+  ```
+  No secret injection is needed on `feature_task` (pure CPU transform, no external calls).
+
+- [X] T036 [US1] Update `apps/kubeflow-pipelines/components/train_model.py` to train on all
+  30 features (3 original + 12 amount rolling + 2 velocity counts + 9 temporal/cyclic +
+  4 geospatial/risk). Replace the hard-coded feature column list:
+  ```python
+  # Before:
+  X = df[["amount", "amount_velocity_5min", "distance_from_home_km"]]
+
+  # After:
+  FEATURE_COLS = [
+      # Original features from lakehouse
+      "amount", "amount_velocity_5min", "distance_from_home_km",
+      # Rolling amount aggregations per user
+      "amount_avg_1h", "amount_max_1h", "amount_min_1h",
+      "amount_avg_6h", "amount_max_6h", "amount_min_6h",
+      "amount_avg_24h", "amount_max_24h", "amount_min_24h",
+      "amount_avg_7d", "amount_max_7d", "amount_min_7d",
+      # Transaction velocity counts per user
+      "tx_count_1h", "tx_count_24h",
+      # Time-based cyclic features
+      "hour_of_day", "day_of_week", "is_weekend", "is_night",
+      "hour_sin", "hour_cos", "dow_sin", "dow_cos",
+      # Transaction frequency pattern
+      "seconds_since_last_tx",
+      # Geospatial / risk features
+      "distance_from_last_location_km", "speed_km_per_hour",
+      "is_impossible_travel", "avg_distance_from_home_24h",
+  ]
+  X = df[FEATURE_COLS]
+  ```
+  Also log the feature count to MLflow so runs are self-documenting:
+  ```python
+  mlflow.log_param("n_features", len(FEATURE_COLS))
+  mlflow.log_param("feature_cols", ",".join(FEATURE_COLS))
+  ```
+  Add this inside the `with mlflow.start_run() as run:` block, before `model.fit`.
+
+---
+
+## Phase 14: Polish & Rebuild
+
+- [ ] T037 [P] [US1] Rebuild the pipeline container image with the new component and reload
+  into Minikube:
+  ```bash
+  docker build -t fraud-training-pipeline:0.2.0 apps/kubeflow-pipelines/
+  minikube image load fraud-training-pipeline:0.2.0 -p fraud-gitops
+  minikube image ls -p fraud-gitops | grep fraud-training-pipeline
+  ```
+  Expect both `0.1.0` and `0.2.0` tags to appear. The `0.2.0` image is used by the updated
+  pipeline components via their `base_image` parameter — update each `@component` decorator in
+  T033–T036 files to reference the new tag if a custom image is used, or leave as
+  `python:3.11-slim` (KFP installs packages at runtime regardless of the compiled image tag).
+
+- [ ] T038 [P] [US1] Recompile the pipeline YAML, re-upload to KFP, and run a new pipeline
+  version to validate the feature engineering step:
+  ```bash
+  cd apps/kubeflow-pipelines
+  python fraud_training_pipeline.py   # emits fraud_training_pipeline.yaml
+  cd ../..
+
+  # Port-forward KFP API (if not already open)
+  kubectl -n kubeflow port-forward svc/ml-pipeline 8888:8888 &
+
+  python3 - <<'EOF'
+  import kfp
+  client = kfp.Client(host="http://127.0.0.1:8888")
+  pipeline = client.upload_pipeline(
+      pipeline_package_path="apps/kubeflow-pipelines/fraud_training_pipeline.yaml",
+      pipeline_name="fraud-training-pipeline-v2",
+  )
+  run = client.create_run_from_pipeline_id(
+      pipeline_id=pipeline.pipeline_id,
+      run_name="fraud-training-run-fe-001",
+  )
+  print(f"Run ID: {run.run_id}")
+  EOF
+  ```
+  **Success criteria**:
+  - KFP UI shows 4 steps: `data-ingestion → feature-engineering → train-model → register-model → deploy-kserve`
+  - `feature_engineering` step completes without error; output Parquet has all 30 feature columns including `tx_count_1h`, `tx_count_24h`, `is_night`, `seconds_since_last_tx`, `hour_sin/cos`, `dow_sin/cos`, `distance_from_last_location_km`, `speed_km_per_hour`, `is_impossible_travel`, `avg_distance_from_home_24h`
+  - MLflow run `n_features=30`; `metrics.auc` is ≥ the baseline run from T029
+  - If the transactions schema has no coordinate columns, the WARNING log appears and geospatial columns contain only sentinel values (−1 / 0) — pipeline does not fail
+
+---
+
+## Dependencies & Execution Order (Feature Engineering Tasks)
+
+- **Phase 12 (T033)**: No dependencies within this batch — modifies existing file independently
+- **Phase 13 (T034)**: Can start in parallel with T033 (new file, no dependency on T033 content)
+- **Phase 13 (T035)**: Requires T034 complete (imports `feature_engineering` function)
+- **Phase 13 (T036)**: Can run in parallel with T034/T035 (different file)
+- **Phase 14 (T037)**: Requires T033–T036 all complete
+- **Phase 14 (T038)**: Requires T037 (image built) and KFP running (T007–T008)
+
+### Parallel Opportunities
+
+```bash
+# T033 and T034 can be written simultaneously (different files):
+T033 update data_ingestion.py  ||  T034 create feature_engineering.py  ||  T036 update train_model.py
+
+# Then sequentially:
+T035 update pipeline.py   # needs T034 import to exist
+T037 docker build         # needs all component files complete
+T038 compile + run        # needs T037 + KFP running
+```

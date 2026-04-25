@@ -3,6 +3,7 @@ from kfp import dsl
 from kfp.kubernetes import use_secret_as_env
 
 from components.data_ingestion import data_ingestion
+from components.feature_engineering import feature_engineering
 from components.train_model import train_model
 from components.register_model import register_model
 from components.deploy_kserve import deploy_kserve
@@ -44,8 +45,12 @@ def fraud_training_pipeline(
         secret_key_to_env={"rootUser": "AWS_ACCESS_KEY_ID", "rootPassword": "AWS_SECRET_ACCESS_KEY"},
     )
 
-    train_task = train_model(
+    feature_task = feature_engineering(
         input_dataset=ingest_task.outputs["output_dataset"],
+    )
+
+    train_task = train_model(
+        input_dataset=feature_task.outputs["output_dataset"],
         mlflow_tracking_uri=mlflow_tracking_uri,
         experiment_name=experiment_name,
         mlflow_s3_endpoint_url=minio_endpoint,
