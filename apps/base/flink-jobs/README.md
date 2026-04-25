@@ -21,6 +21,68 @@ ConfigMap mount at `/opt/flink/sql/`.
 
 Pure SQL cannot register custom `MetricGroup` hooks. For dashboards, use Flink and Iceberg built-in task/operator metrics (for example metrics whose names contain `Iceberg` or checkpoint/commit timings) and document the exact PromQL in `docs/runbooks/grafana-dashboards.md` once you confirm names from your Flink version. A future thin Java sink wrapper could emit `user_scope_iceberg_commit_latency_ms` if you need a dedicated histogram.
 
+## Model scoring job (Kafka → Iceberg → KServe → `transactions_scored`)
+
+A second entry point, **`ModelScorerJob`**, reads the `transactions` Iceberg table as a streaming
+source, calls the KServe fraud detection endpoint via Flink **Async I/O**, and writes enriched
+records (all original columns + `fraud_probability DOUBLE`) to `transactions_scored`.
+
+### Components
+
+| File | Purpose |
+|------|---------|
+| `jobs/flink-sql-runner/src/main/java/…/ModelScorerJob.java` | Flink DataStream entry point; sets up Polaris catalog, async scoring, Iceberg sink |
+| `jobs/flink-sql-runner/src/main/java/…/KServeAsyncFunction.java` | `RichAsyncFunction` that calls the KServe V2 endpoint; uses JDK `HttpClient` |
+| `apps/base/flink-jobs/flink_scored_ddl.sql` | DDL-only SQL file run by `create-transactions-scored-table` K8s Job |
+| `apps/base/flink-jobs/resources.yaml` | K8s Job + `fraud-score-enricher` FlinkDeployment |
+
+### Deploy order
+
+1. Apply GitOps (`flux reconcile ks apps-flink-jobs`) — this creates the `flink-scored-ddl`
+   ConfigMap and triggers the `create-transactions-scored-table` Job first.
+2. Once that Job completes, the `fraud-score-enricher` FlinkDeployment starts.
+
+Manually:
+
+```bash
+# 1. Create the scored table
+kubectl -n flink-system create job create-transactions-scored-table \
+  --from=cronjob/create-transactions-scored-table 2>/dev/null || true
+kubectl -n flink-system wait job/create-transactions-scored-table --for=condition=complete --timeout=120s
+
+# 2. Apply the FlinkDeployment (already in resources.yaml)
+kubectl -n flink-system get flinkdeployment fraud-score-enricher
+```
+
+### Configuration
+
+- **`KSERVE_ENDPOINT`** env var on the FlinkDeployment overrides the default in-cluster URL.
+- Polaris and MinIO credentials use the same Secrets (`polaris-flink-oauth`,
+  `polaris-bootstrap-credentials`, `minio-flink-s3-credentials`) as `sample-fraud-stream`.
+- Error sentinel: if KServe returns non-200 or times out, `fraud_probability = -1.0` is written
+  so the pipeline never stalls.
+
+### Verify
+
+```bash
+# Check FlinkDeployment status
+kubectl -n flink-system get flinkdeployment fraud-score-enricher
+
+# Read transactions_scored via PyIceberg (port-forward Polaris + MinIO first)
+python3 - <<'EOF'
+import os; from pyiceberg.catalog import load_catalog
+cat = load_catalog("polaris", type="rest",
+    uri=os.environ["POLARIS_CATALOG_URI"], warehouse="quickstart_catalog",
+    credential=f'{os.environ["POLARIS_CLIENT_ID"]}:{os.environ["POLARIS_CLIENT_SECRET"]}',
+    **{"s3.endpoint": os.environ["POLARIS_MINIO_ENDPOINT"],
+       "s3.access-key-id": os.environ["POLARIS_S3_ACCESS_KEY_ID"],
+       "s3.secret-access-key": os.environ["POLARIS_S3_SECRET_ACCESS_KEY"],
+       "header.X-Iceberg-Access-Delegation": ""})
+df = cat.load_table(("default", "transactions_scored")).scan().limit(5).to_arrow()
+print(df.select(["transaction_id", "fraud_probability"]))
+EOF
+```
+
 ## Build and load (Minikube)
 
 The shaded JAR targets **Java 17** (`maven.compiler.release` in `jobs/flink-sql-runner/pom.xml`), matching the **`flink:1.20.3-java17`** base image in `Dockerfile`. If you see `UnsupportedClassVersionError`, rebuild the JAR after changing the POM, rebuild the image, and reload it into the cluster.

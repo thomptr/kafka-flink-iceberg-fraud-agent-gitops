@@ -1,3 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-db
+  namespace: mlflow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,16 +28,16 @@ spec:
       containers:
         - name: mlflow
           image: ghcr.io/mlflow/mlflow:v2.11.3
+          command: ["sh", "-c"]
           args:
-            - mlflow
-            - server
-            - --host
-            - 0.0.0.0
-            - --port
-            - "5000"
-            - --serve-artifacts
-            - --artifacts-destination
-            - s3://mlflow-artifacts
+            - |
+              pip install -q boto3 && \
+              mlflow server \
+                --host 0.0.0.0 \
+                --port 5000 \
+                --backend-store-uri sqlite:///mlflow/db/mlflow.db \
+                --serve-artifacts \
+                --artifacts-destination s3://mlflow-artifacts
           env:
             - name: MLFLOW_S3_ENDPOINT_URL
               value: http://minio.minio.svc.cluster.local:9000
@@ -42,6 +54,13 @@ spec:
           ports:
             - containerPort: 5000
               name: http
+          volumeMounts:
+            - name: mlflow-db
+              mountPath: /mlflow/db
+      volumes:
+        - name: mlflow-db
+          persistentVolumeClaim:
+            claimName: mlflow-db
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,578 @@
+# PIPELINE DEFINITION
+# Name: fraud-training-pipeline
+# Description: Train XGBoost fraud detector from Iceberg data, register in MLFlow, deploy to KServe
+# Inputs:
+#    experiment_name: str [Default: 'fraud-detection']
+#    kserve_namespace: str [Default: 'kubeflow-user-example-com']
+#    minio_endpoint: str [Default: 'http://minio.minio.svc.cluster.local:9000']
+#    mlflow_tracking_uri: str [Default: 'http://mlflow.mlflow.svc.cluster.local:5000']
+#    model_name: str [Default: 'fraud-detector']
+#    polaris_uri: str [Default: 'http://polaris.polaris.svc.cluster.local:8181/api/catalog']
+#    warehouse: str [Default: 'quickstart_catalog']
+# Outputs:
+#    train-model-metrics: system.Metrics
+components:
+  comp-data-ingestion:
+    executorLabel: exec-data-ingestion
+    inputDefinitions:
+      parameters:
+        minio_access_key:
+          parameterType: STRING
+        minio_endpoint:
+          parameterType: STRING
+        minio_secret_key:
+          parameterType: STRING
+        polaris_credential:
+          parameterType: STRING
+        polaris_uri:
+          parameterType: STRING
+        warehouse:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        output_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-deploy-kserve:
+    executorLabel: exec-deploy-kserve
+    inputDefinitions:
+      artifacts:
+        trained_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        aws_access_key_id:
+          parameterType: STRING
+        aws_secret_access_key:
+          parameterType: STRING
+        mlflow_s3_endpoint_url:
+          parameterType: STRING
+        mlflow_tracking_uri:
+          parameterType: STRING
+        model_name:
+          parameterType: STRING
+        namespace:
+          parameterType: STRING
+  comp-register-model:
+    executorLabel: exec-register-model
+    inputDefinitions:
+      artifacts:
+        trained_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        aws_access_key_id:
+          parameterType: STRING
+        aws_secret_access_key:
+          parameterType: STRING
+        mlflow_s3_endpoint_url:
+          parameterType: STRING
+        mlflow_tracking_uri:
+          parameterType: STRING
+        model_name:
+          parameterType: STRING
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        aws_access_key_id:
+          parameterType: STRING
+        aws_secret_access_key:
+          parameterType: STRING
+        experiment_name:
+          parameterType: STRING
+        mlflow_s3_endpoint_url:
+          parameterType: STRING
+        mlflow_tracking_uri:
+          parameterType: STRING
+        model_name:
+          defaultValue: fraud-detector
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        output_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-data-ingestion:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - data_ingestion
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pyiceberg[pyarrow,s3]==0.7.1'\
+          \ 'pandas==2.2.2' 'pyarrow==15.0.2' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef data_ingestion(\n    polaris_uri: str,\n    warehouse: str,\n\
+          \    polaris_credential: str,\n    minio_endpoint: str,\n    minio_access_key:\
+          \ str,\n    minio_secret_key: str,\n    output_dataset: Output[Dataset],\n\
+          ) -> None:\n    import os\n    import pandas as pd\n    from pyiceberg.catalog\
+          \ import load_catalog\n\n    # Prefer env vars injected from k8s secret\
+          \ over explicit params\n    access_key = os.environ.get(\"AWS_ACCESS_KEY_ID\"\
+          , minio_access_key)\n    secret_key = os.environ.get(\"AWS_SECRET_ACCESS_KEY\"\
+          , minio_secret_key)\n\n    catalog = load_catalog(\n        \"polaris\"\
+          ,\n        type=\"rest\",\n        uri=polaris_uri,\n        warehouse=warehouse,\n\
+          \        credential=polaris_credential,\n        scope=\"PRINCIPAL_ROLE:ALL\"\
+          ,\n        **{\n            \"s3.endpoint\": minio_endpoint,\n         \
+          \   \"s3.access-key-id\": access_key,\n            \"s3.secret-access-key\"\
+          : secret_key,\n            \"s3.region\": \"us-east-1\",\n            \"\
+          s3.path-style-access\": \"true\",\n            \"client.region\": \"us-east-1\"\
+          ,\n        },\n    )\n    # Polaris with stsUnavailable=true cannot vend\
+          \ STS credentials.\n    # Remove the delegation header so Polaris returns\
+          \ plain table metadata.\n    catalog._session.headers.pop(\"X-Iceberg-Access-Delegation\"\
+          , None)\n    table = catalog.load_table((\"default\", \"transactions\"))\n\
+          \    df = table.scan().to_pandas()\n\n    # Label: top 5% by velocity OR\
+          \ top 5% by distance \u2192 ~10% fraud rate\n    vel_threshold = df[\"amount_velocity_5min\"\
+          ].quantile(0.95)\n    dist_threshold = df[\"distance_from_home_km\"].quantile(0.95)\n\
+          \    df[\"label\"] = (\n        (df[\"amount_velocity_5min\"] > vel_threshold)\
+          \ |\n        (df[\"distance_from_home_km\"] > dist_threshold)\n    ).astype(int)\n\
+          \    df = df[[\"amount\", \"amount_velocity_5min\", \"distance_from_home_km\"\
+          , \"label\"]].dropna()\n\n    df.to_parquet(output_dataset.path, index=False)\n\
+          \    print(f\"Ingested {len(df)} rows; fraud rate: {df['label'].mean():.3f}\"\
+          )\n\n"
+        image: python:3.11-slim
+    exec-deploy-kserve:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - deploy_kserve
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kubernetes==29.0.0'\
+          \ 'mlflow==2.13.0' 'boto3==1.34.101' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef deploy_kserve(\n    trained_model: Input[Model],\n    model_name:\
+          \ str,\n    namespace: str,\n    mlflow_tracking_uri: str,\n    mlflow_s3_endpoint_url:\
+          \ str,\n    aws_access_key_id: str,\n    aws_secret_access_key: str,\n)\
+          \ -> None:\n    import json\n    import os\n    import sys\n    import mlflow\n\
+          \    from mlflow.tracking import MlflowClient\n    from kubernetes import\
+          \ client as k8s_client, config as k8s_config\n\n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"\
+          ] = mlflow_s3_endpoint_url\n    os.environ.setdefault(\"AWS_ACCESS_KEY_ID\"\
+          , aws_access_key_id)\n    os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\"\
+          , aws_secret_access_key)\n\n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n\
+          \    kf_client = MlflowClient()\n\n    versions = kf_client.get_latest_versions(model_name,\
+          \ stages=[\"Staging\"])\n    if not versions:\n        raise RuntimeError(f\"\
+          No Staging version found for model '{model_name}'\")\n    source = versions[0].source\n\
+          \    # Convert MLFlow proxy URI to real S3 path for KServe storage-initializer.\n\
+          \    # mlflow-artifacts:/EXP/RUN/artifacts/... \u2192 s3://mlflow-artifacts/EXP/RUN/artifacts/...\n\
+          \    if source.startswith(\"mlflow-artifacts:/\"):\n        model_uri =\
+          \ \"s3://mlflow-artifacts/\" + source[len(\"mlflow-artifacts:/\"):].lstrip(\"\
+          /\")\n    else:\n        model_uri = source\n    print(f\"Model storage\
+          \ URI: {model_uri}\", flush=True)\n\n    k8s_config.load_incluster_config()\n\
+          \    v1_api = k8s_client.CoreV1Api()\n\n    # Ensure the S3 secret exists\
+          \ so the storage-initializer can pull from MinIO.\n    s3_secret_name =\
+          \ \"kserve-s3-creds\"\n    s3_secret = {\n        \"apiVersion\": \"v1\"\
+          ,\n        \"kind\": \"Secret\",\n        \"metadata\": {\n            \"\
+          name\": s3_secret_name,\n            \"namespace\": namespace,\n       \
+          \     \"annotations\": {\n                \"serving.kserve.io/s3-endpoint\"\
+          : \"minio.minio.svc.cluster.local:9000\",\n                \"serving.kserve.io/s3-usehttps\"\
+          : \"0\",\n                \"serving.kserve.io/s3-region\": \"us-east-1\"\
+          ,\n                \"serving.kserve.io/s3-useanoncredential\": \"false\"\
+          ,\n            },\n        },\n        \"stringData\": {\n            \"\
+          AWS_ACCESS_KEY_ID\": os.environ.get(\"AWS_ACCESS_KEY_ID\", aws_access_key_id),\n\
+          \            \"AWS_SECRET_ACCESS_KEY\": os.environ.get(\"AWS_SECRET_ACCESS_KEY\"\
+          , aws_secret_access_key),\n        },\n    }\n    try:\n        v1_api.create_namespaced_secret(namespace=namespace,\
+          \ body=s3_secret)\n        print(f\"Created secret {s3_secret_name}\", flush=True)\n\
+          \    except k8s_client.ApiException as e:\n        if e.status == 409:\n\
+          \            v1_api.patch_namespaced_secret(\n                name=s3_secret_name,\
+          \ namespace=namespace, body=s3_secret\n            )\n            print(f\"\
+          Updated secret {s3_secret_name}\", flush=True)\n        else:\n        \
+          \    raise\n\n    # Ensure the ServiceAccount that references the S3 secret\
+          \ exists.\n    sa_name = \"kserve-sa\"\n    sa_body = {\n        \"apiVersion\"\
+          : \"v1\",\n        \"kind\": \"ServiceAccount\",\n        \"metadata\":\
+          \ {\"name\": sa_name, \"namespace\": namespace},\n        \"secrets\": [{\"\
+          name\": s3_secret_name}],\n    }\n    try:\n        v1_api.create_namespaced_service_account(namespace=namespace,\
+          \ body=sa_body)\n        print(f\"Created ServiceAccount {sa_name}\", flush=True)\n\
+          \    except k8s_client.ApiException as e:\n        if e.status != 409:\n\
+          \            raise\n\n    inference_service = {\n        \"apiVersion\"\
+          : \"serving.kserve.io/v1beta1\",\n        \"kind\": \"InferenceService\"\
+          ,\n        \"metadata\": {\n            \"name\": model_name,\n        \
+          \    \"namespace\": namespace,\n            \"annotations\": {\"sidecar.istio.io/inject\"\
+          : \"false\"},\n        },\n        \"spec\": {\n            \"predictor\"\
+          : {\n                \"serviceAccountName\": sa_name,\n                \"\
+          model\": {\n                    \"modelFormat\": {\"name\": \"xgboost\"\
+          },\n                    \"storageUri\": model_uri,\n                   \
+          \ \"resources\": {\n                        \"requests\": {\"cpu\": \"100m\"\
+          , \"memory\": \"256Mi\"},\n                        \"limits\": {\"cpu\"\
+          : \"1\", \"memory\": \"1Gi\"},\n                    },\n               \
+          \ },\n            }\n        },\n    }\n\n    custom_api = k8s_client.CustomObjectsApi()\n\
+          \    try:\n        custom_api.create_namespaced_custom_object(\n       \
+          \     group=\"serving.kserve.io\",\n            version=\"v1beta1\",\n \
+          \           namespace=namespace,\n            plural=\"inferenceservices\"\
+          ,\n            body=inference_service,\n        )\n        print(f\"Created\
+          \ InferenceService {model_name} in {namespace}\", flush=True)\n    except\
+          \ k8s_client.ApiException as e:\n        if e.status == 409:\n         \
+          \   custom_api.patch_namespaced_custom_object(\n                group=\"\
+          serving.kserve.io\",\n                version=\"v1beta1\",\n           \
+          \     namespace=namespace,\n                plural=\"inferenceservices\"\
+          ,\n                name=model_name,\n                body=inference_service,\n\
+          \            )\n            print(f\"Updated InferenceService {model_name}\
+          \ in {namespace}\", flush=True)\n        else:\n            raise\n\n"
+        image: python:3.11-slim
+    exec-register-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - register_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'mlflow==2.13.0'\
+          \ 'boto3==1.34.101' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef register_model(\n    trained_model: Input[Model],\n    model_name:\
+          \ str,\n    mlflow_tracking_uri: str,\n    mlflow_s3_endpoint_url: str,\n\
+          \    aws_access_key_id: str,\n    aws_secret_access_key: str,\n) -> None:\n\
+          \    import os\n    import mlflow\n    from mlflow.tracking import MlflowClient\n\
+          \n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"] = mlflow_s3_endpoint_url\n\
+          \    os.environ.setdefault(\"AWS_ACCESS_KEY_ID\", aws_access_key_id)\n \
+          \   os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\", aws_secret_access_key)\n\
+          \n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n    client = MlflowClient()\n\
+          \n    model_uri = trained_model.metadata[\"model_uri\"]\n    mv = mlflow.register_model(model_uri=model_uri,\
+          \ name=model_name)\n\n    client.transition_model_version_stage(\n     \
+          \   name=model_name,\n        version=mv.version,\n        stage=\"Staging\"\
+          ,\n        archive_existing_versions=True,\n    )\n    print(f\"Registered\
+          \ {model_name} v{mv.version} \u2192 Staging\")\n    print(f\"Model URI:\
+          \ {model_uri}\")\n\n"
+        image: python:3.11-slim
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'xgboost==2.0.3'\
+          \ 'scikit-learn==1.4.2' 'pandas==2.2.2' 'pyarrow==15.0.2' 'mlflow==2.13.0'\
+          \ 'boto3==1.34.101' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(\n    input_dataset: Input[Dataset],\n    mlflow_tracking_uri:\
+          \ str,\n    experiment_name: str,\n    mlflow_s3_endpoint_url: str,\n  \
+          \  aws_access_key_id: str,\n    aws_secret_access_key: str,\n    output_model:\
+          \ Output[Model],\n    metrics: Output[Metrics],\n    model_name: str = \"\
+          fraud-detector\",\n) -> None:\n    import os\n    import mlflow\n    import\
+          \ mlflow.xgboost\n    import pandas as pd\n    import xgboost as xgb\n \
+          \   from sklearn.model_selection import train_test_split\n    from sklearn.metrics\
+          \ import roc_auc_score, accuracy_score\n\n    os.environ[\"MLFLOW_S3_ENDPOINT_URL\"\
+          ] = mlflow_s3_endpoint_url\n    # Prefer env vars injected from k8s secret\
+          \ over explicit params\n    os.environ.setdefault(\"AWS_ACCESS_KEY_ID\"\
+          , aws_access_key_id)\n    os.environ.setdefault(\"AWS_SECRET_ACCESS_KEY\"\
+          , aws_secret_access_key)\n\n    mlflow.set_tracking_uri(mlflow_tracking_uri)\n\
+          \    mlflow.set_experiment(experiment_name)\n\n    df = pd.read_parquet(input_dataset.path)\n\
+          \    X = df[[\"amount\", \"amount_velocity_5min\", \"distance_from_home_km\"\
+          ]]\n    y = df[\"label\"]\n    X_train, X_test, y_train, y_test = train_test_split(X,\
+          \ y, test_size=0.2, random_state=42)\n\n    mlflow.xgboost.autolog()\n \
+          \   with mlflow.start_run() as run:\n        # Try GPU first; fall back\
+          \ to hist (CPU) if no CUDA device available\n        try:\n            import\
+          \ subprocess\n            subprocess.run([\"nvidia-smi\"], check=True, capture_output=True)\n\
+          \            tree_method = \"gpu_hist\"\n            device = \"cuda\"\n\
+          \        except Exception:\n            tree_method = \"hist\"\n       \
+          \     device = \"cpu\"\n\n        model = xgb.XGBClassifier(\n         \
+          \   n_estimators=100,\n            max_depth=6,\n            learning_rate=0.1,\n\
+          \            tree_method=tree_method,\n            device=device,\n    \
+          \        eval_metric=\"auc\",\n            use_label_encoder=False,\n  \
+          \      )\n        model.fit(X_train, y_train, eval_set=[(X_test, y_test)],\
+          \ verbose=False)\n\n        y_pred = model.predict(X_test)\n        y_prob\
+          \ = model.predict_proba(X_test)[:, 1]\n        auc = roc_auc_score(y_test,\
+          \ y_prob)\n        acc = accuracy_score(y_test, y_pred)\n\n        mlflow.log_metrics({\"\
+          auc\": auc, \"accuracy\": acc})\n        mlflow.xgboost.log_model(model,\
+          \ artifact_path=\"xgboost-model\")\n\n        # KServe xgbserver v0.13.1\
+          \ looks for {inferenceservice_name}.json/.bst/.ubj.\n        # Save in JSON\
+          \ text format with the InferenceService name so it is discovered.\n    \
+          \    import tempfile\n        with tempfile.TemporaryDirectory() as tmpdir:\n\
+          \            json_path = os.path.join(tmpdir, f\"{model_name}.json\")\n\
+          \            model.get_booster().save_model(json_path)\n            mlflow.log_artifact(json_path,\
+          \ artifact_path=\"xgboost-model\")\n\n        model.save_model(output_model.path\
+          \ + \".json\")\n        output_model.metadata[\"run_id\"] = run.info.run_id\n\
+          \        output_model.metadata[\"model_uri\"] = f\"runs:/{run.info.run_id}/xgboost-model\"\
+          \n\n        metrics.log_metric(\"auc\", auc)\n        metrics.log_metric(\"\
+          accuracy\", acc)\n\n        print(f\"Run ID: {run.info.run_id}  AUC: {auc:.4f}\
+          \  Accuracy: {acc:.4f}  device: {device}\", flush=True)\n\n"
+        image: python:3.11-slim
+        resources:
+          accelerator:
+            count: '1'
+            type: nvidia.com/gpu
+pipelineInfo:
+  description: Train XGBoost fraud detector from Iceberg data, register in MLFlow,
+    deploy to KServe
+  name: fraud-training-pipeline
+root:
+  dag:
+    outputs:
+      artifacts:
+        train-model-metrics:
+          artifactSelectors:
+          - outputArtifactKey: metrics
+            producerSubtask: train-model
+    tasks:
+      data-ingestion:
+        cachingOptions: {}
+        componentRef:
+          name: comp-data-ingestion
+        inputs:
+          parameters:
+            minio_access_key:
+              runtimeValue:
+                constant: minioadmin
+            minio_endpoint:
+              componentInputParameter: minio_endpoint
+            minio_secret_key:
+              runtimeValue:
+                constant: minioadmin
+            polaris_credential:
+              runtimeValue:
+                constant: root:password
+            polaris_uri:
+              componentInputParameter: polaris_uri
+            warehouse:
+              componentInputParameter: warehouse
+        taskInfo:
+          name: data-ingestion
+      deploy-kserve:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-deploy-kserve
+        dependentTasks:
+        - register-model
+        - train-model
+        inputs:
+          artifacts:
+            trained_model:
+              taskOutputArtifact:
+                outputArtifactKey: output_model
+                producerTask: train-model
+          parameters:
+            aws_access_key_id:
+              runtimeValue:
+                constant: minioadmin
+            aws_secret_access_key:
+              runtimeValue:
+                constant: minioadmin
+            mlflow_s3_endpoint_url:
+              componentInputParameter: minio_endpoint
+            mlflow_tracking_uri:
+              componentInputParameter: mlflow_tracking_uri
+            model_name:
+              componentInputParameter: model_name
+            namespace:
+              componentInputParameter: kserve_namespace
+        taskInfo:
+          name: deploy-kserve
+      register-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-register-model
+        dependentTasks:
+        - train-model
+        inputs:
+          artifacts:
+            trained_model:
+              taskOutputArtifact:
+                outputArtifactKey: output_model
+                producerTask: train-model
+          parameters:
+            aws_access_key_id:
+              runtimeValue:
+                constant: minioadmin
+            aws_secret_access_key:
+              runtimeValue:
+                constant: minioadmin
+            mlflow_s3_endpoint_url:
+              componentInputParameter: minio_endpoint
+            mlflow_tracking_uri:
+              componentInputParameter: mlflow_tracking_uri
+            model_name:
+              componentInputParameter: model_name
+        taskInfo:
+          name: register-model
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - data-ingestion
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: data-ingestion
+          parameters:
+            aws_access_key_id:
+              runtimeValue:
+                constant: minioadmin
+            aws_secret_access_key:
+              runtimeValue:
+                constant: minioadmin
+            experiment_name:
+              componentInputParameter: experiment_name
+            mlflow_s3_endpoint_url:
+              componentInputParameter: minio_endpoint
+            mlflow_tracking_uri:
+              componentInputParameter: mlflow_tracking_uri
+            model_name:
+              componentInputParameter: model_name
+        taskInfo:
+          name: train-model
+  inputDefinitions:
+    parameters:
+      experiment_name:
+        defaultValue: fraud-detection
+        isOptional: true
+        parameterType: STRING
+      kserve_namespace:
+        defaultValue: kubeflow-user-example-com
+        isOptional: true
+        parameterType: STRING
+      minio_endpoint:
+        defaultValue: http://minio.minio.svc.cluster.local:9000
+        isOptional: true
+        parameterType: STRING
+      mlflow_tracking_uri:
+        defaultValue: http://mlflow.mlflow.svc.cluster.local:5000
+        isOptional: true
+        parameterType: STRING
+      model_name:
+        defaultValue: fraud-detector
+        isOptional: true
+        parameterType: STRING
+      polaris_uri:
+        defaultValue: http://polaris.polaris.svc.cluster.local:8181/api/catalog
+        isOptional: true
+        parameterType: STRING
+      warehouse:
+        defaultValue: quickstart_catalog
+        isOptional: true
+        parameterType: STRING
+  outputDefinitions:
+    artifacts:
+      train-model-metrics:
+        artifactType:
+          schemaTitle: system.Metrics
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.7.0
+---
+platforms:
+  kubernetes:
+    deploymentSpec:
+      executors:
+        exec-data-ingestion:
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: rootUser
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: rootPassword
+            secretName: minio-flink-s3-credentials
+        exec-deploy-kserve:
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: rootUser
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: rootPassword
+            secretName: minio-flink-s3-credentials
+        exec-register-model:
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: rootUser
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: rootPassword
+            secretName: minio-flink-s3-credentials
+        exec-train-model:
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: rootUser
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: rootPassword
+            secretName: minio-flink-s3-credentials

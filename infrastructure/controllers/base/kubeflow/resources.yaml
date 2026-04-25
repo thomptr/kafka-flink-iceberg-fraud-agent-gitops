@@ -299,3 +299,233 @@ spec:
     name: kubeflow-manifests
   timeout: 20m
   wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-pipelines
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-cert-manager
+    - name: kubeflow-istio-resources
+    - name: kubeflow-namespace
+  interval: 30m
+  path: ./apps/pipeline/upstream/env/cert-manager/platform-agnostic-multi-user
+  patches:
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-api-server
+                  resources:
+                    requests:
+                      cpu: 250m
+                      memory: 256Mi
+                    limits:
+                      cpu: "1"
+                      memory: 1Gi
+      target:
+        kind: Deployment
+        name: ml-pipeline
+        namespace: kubeflow
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline-ui
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-ui
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+      target:
+        kind: Deployment
+        name: ml-pipeline-ui
+        namespace: kubeflow
+    - patch: |-
+        - op: replace
+          path: /spec/template/spec/containers/0/livenessProbe
+          value:
+            httpGet:
+              path: /apis/v1beta1/healthz
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+        - op: replace
+          path: /spec/template/spec/containers/0/readinessProbe
+          value:
+            httpGet:
+              path: /apis/v1beta1/healthz
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+      target:
+        kind: Deployment
+        name: ml-pipeline-ui
+        namespace: kubeflow
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline-persistenceagent
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-persistenceagent
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 500m
+                      memory: 256Mi
+      target:
+        kind: Deployment
+        name: ml-pipeline-persistenceagent
+        namespace: kubeflow
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline-scheduledworkflow
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-scheduledworkflow
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 500m
+                      memory: 256Mi
+      target:
+        kind: Deployment
+        name: ml-pipeline-scheduledworkflow
+        namespace: kubeflow
+    - patch: |-
+        - op: replace
+          path: /spec/trafficPolicy/tls/mode
+          value: DISABLE
+      target:
+        kind: DestinationRule
+        name: ml-pipeline-ui
+        namespace: kubeflow
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ml-pipeline-ui
+          namespace: kubeflow
+        spec:
+          template:
+            spec:
+              containers:
+                - name: ml-pipeline-ui
+                  env:
+                    - name: CLUSTER_NAME
+                      value: "fraud-gitops"
+                    - name: PROJECT_ID
+                      value: "local"
+      target:
+        kind: Deployment
+        name: ml-pipeline-ui
+        namespace: kubeflow
+    - patch: |-
+        - op: add
+          path: /spec/template/spec/containers/0/args/-
+          value: "--grpc_channel_arguments=grpc.max_metadata_size=33554432"
+      target:
+        kind: Deployment
+        name: metadata-grpc-deployment
+        namespace: kubeflow
+  images:
+    - name: gcr.io/ml-pipeline/frontend
+      newTag: 2.3.0
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 30m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-kserve
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-cert-manager
+    - name: kubeflow-istio-resources
+  interval: 30m
+  path: ./contrib/kserve/kserve
+  patches:
+    - patch: |
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: inferenceservice-config
+          namespace: kserve
+        data:
+          deploy: |
+            {
+              "defaultDeploymentMode": "RawDeployment"
+            }
+      target:
+        kind: ConfigMap
+        name: inferenceservice-config
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 30m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubeflow-kserve-models-web-app
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: kubeflow-kserve
+    - name: kubeflow-centraldashboard
+  interval: 30m
+  path: ./contrib/kserve/models-web-app/overlays/kubeflow
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: kubeflow-manifests
+  timeout: 20m
+  wait: true

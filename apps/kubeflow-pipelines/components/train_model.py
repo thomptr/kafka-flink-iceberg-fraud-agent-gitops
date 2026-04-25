@@ -1,0 +1,120 @@
+from kfp.dsl import component, Input, Output, Dataset, Model, Metrics
+
+
+@component(
+    base_image="python:3.11-slim",
+    packages_to_install=[
+        "xgboost==2.0.3",
+        "scikit-learn==1.4.2",
+        "pandas==2.2.2",
+        "pyarrow==15.0.2",
+        "mlflow==2.13.0",
+        "boto3==1.34.101",
+    ],
+)
+def train_model(
+    input_dataset: Input[Dataset],
+    mlflow_tracking_uri: str,
+    experiment_name: str,
+    mlflow_s3_endpoint_url: str,
+    aws_access_key_id: str,
+    aws_secret_access_key: str,
+    output_model: Output[Model],
+    metrics: Output[Metrics],
+    model_name: str = "fraud-detector",
+) -> None:
+    import os
+    import mlflow
+    import mlflow.xgboost
+    import pandas as pd
+    import xgboost as xgb
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import roc_auc_score, accuracy_score
+
+    os.environ["MLFLOW_S3_ENDPOINT_URL"] = mlflow_s3_endpoint_url
+    # Prefer env vars injected from k8s secret over explicit params
+    os.environ.setdefault("AWS_ACCESS_KEY_ID", aws_access_key_id)
+    os.environ.setdefault("AWS_SECRET_ACCESS_KEY", aws_secret_access_key)
+
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    mlflow.set_experiment(experiment_name)
+
+    df = pd.read_parquet(input_dataset.path)
+
+    FEATURE_COLS = [
+        # Original features from lakehouse
+        "amount", "amount_velocity_5min", "distance_from_home_km",
+        # Rolling amount aggregations per user
+        "amount_avg_1h", "amount_max_1h", "amount_min_1h",
+        "amount_avg_6h", "amount_max_6h", "amount_min_6h",
+        "amount_avg_24h", "amount_max_24h", "amount_min_24h",
+        "amount_avg_7d", "amount_max_7d", "amount_min_7d",
+        # Transaction velocity counts per user
+        "tx_count_1h", "tx_count_24h",
+        # Time-based cyclic features
+        "hour_of_day", "day_of_week", "is_weekend", "is_night",
+        "hour_sin", "hour_cos", "dow_sin", "dow_cos",
+        # Transaction frequency pattern
+        "seconds_since_last_tx",
+        # Geospatial / risk features
+        "distance_from_last_location_km", "speed_km_per_hour",
+        "is_impossible_travel", "avg_distance_from_home_24h",
+    ]
+    # Keep only columns that exist in the dataset (graceful degradation when
+    # feature_engineering ran without coordinates)
+    available_cols = [c for c in FEATURE_COLS if c in df.columns]
+    X = df[available_cols].astype(float)
+    y = df["label"]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    mlflow.xgboost.autolog()
+    with mlflow.start_run() as run:
+        # Try GPU first; fall back to hist (CPU) if no CUDA device available
+        try:
+            import subprocess
+            subprocess.run(["nvidia-smi"], check=True, capture_output=True)
+            tree_method = "gpu_hist"
+            device = "cuda"
+        except Exception:
+            tree_method = "hist"
+            device = "cpu"
+
+        mlflow.log_param("n_features", len(available_cols))
+        mlflow.log_param("feature_cols", ",".join(available_cols))
+
+        model = xgb.XGBClassifier(
+            n_estimators=100,
+            max_depth=6,
+            learning_rate=0.1,
+            tree_method=tree_method,
+            device=device,
+            eval_metric="auc",
+            use_label_encoder=False,
+        )
+        model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+
+        y_pred = model.predict(X_test)
+        y_prob = model.predict_proba(X_test)[:, 1]
+        auc = roc_auc_score(y_test, y_prob)
+        acc = accuracy_score(y_test, y_pred)
+
+        mlflow.log_metrics({"auc": auc, "accuracy": acc})
+        mlflow.xgboost.log_model(model, artifact_path="xgboost-model")
+
+        # KServe xgbserver v0.13.1 looks for {inferenceservice_name}.json/.bst/.ubj.
+        # Save in JSON text format with the InferenceService name so it is discovered.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_path = os.path.join(tmpdir, f"{model_name}.json")
+            model.get_booster().save_model(json_path)
+            mlflow.log_artifact(json_path, artifact_path="xgboost-model")
+
+        model.save_model(output_model.path + ".json")
+        output_model.metadata["run_id"] = run.info.run_id
+        output_model.metadata["model_uri"] = f"runs:/{run.info.run_id}/xgboost-model"
+
+        metrics.log_metric("auc", auc)
+        metrics.log_metric("accuracy", acc)
+
+        print(f"Run ID: {run.info.run_id}  AUC: {auc:.4f}  Accuracy: {acc:.4f}  "
+              f"device: {device}  n_features: {len(available_cols)}", flush=True)
