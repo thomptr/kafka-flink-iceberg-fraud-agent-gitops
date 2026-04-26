@@ -64,10 +64,12 @@ minikube image load fraud-alert-agent:0.1.0 -p fraud-gitops
 # Create the namespace and required secrets
 kubectl apply -f apps/base/fraud-alert-agent/namespace.yaml
 
+export SLACK_WEBHOOK_URL={your-slack-webhook-url}
+
 kubectl create secret generic fraud-agent-secrets -n fraud-agent \
   --from-literal=database-url="postgresql+asyncpg://fraud:fraud@postgres.fraud-agent.svc.cluster.local:5432/fraud_agent" \
   --from-literal=api-key="$(openssl rand -hex 32)" \
-  --from-literal=slack-webhook-url="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  --from-literal=slack-webhook-url=$SLACK_WEBHOOK_URL
 
 # Deploy Postgres (dev/test only — use managed Postgres in production)
 kubectl apply -f apps/base/fraud-alert-agent/postgres.yaml

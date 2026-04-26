@@ -32,11 +32,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dashboard = [
+    "streamlit>=1.35",
+    "streamlit-autorefresh>=1.0",
+]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
     "httpx",
     "testcontainers[postgres]>=4",
+    "pytest-mock>=3.14",
 ]
 
 [tool.setuptools.packages.find]
