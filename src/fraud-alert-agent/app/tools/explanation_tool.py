@@ -39,9 +39,12 @@ def explain_fraud_flag(
     if not tx_dict and not history_dict:
         return "Invalid input data — could not parse transaction or user history."
 
+    # LLM sometimes passes fraud_score as a percentage (e.g. 99.5) rather than a
+    # fraction (0.995); normalise to fraction before :.2% formatting.
+    score_fraction = fraud_score / 100.0 if fraud_score > 1.0 else fraud_score
     system_msg = (
         f"Given this transaction details, user history, and model probability of "
-        f"{fraud_score:.2%}, provide a clear, concise reason why it was flagged as "
+        f"{score_fraction:.2%}, provide a clear, concise reason why it was flagged as "
         f"fraud. Highlight anomalies."
     )
     user_msg = json.dumps({"transaction": tx_dict, "user_history": history_dict}, default=str)
