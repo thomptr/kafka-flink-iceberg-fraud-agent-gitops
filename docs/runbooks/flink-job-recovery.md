@@ -119,6 +119,84 @@ Expected: all operators show `parallelism=1`.
 
 ---
 
+## Scenario 3 — No jobs running in the Flink UI
+
+### Symptoms
+
+The Flink UI (reachable via the ingress on port 8085) shows no running jobs, or jobs are listed as `FAILED` / `CANCELED`. The `FlinkDeployment` resources confirm the state:
+
+```bash
+kubectl --context=fraud-gitops get flinkdeployments -n flink-system
+NAME                          JOB STATUS   LIFECYCLE STATE
+fraud-score-enricher          FAILED       FAILED
+fraud-score-kafka-publisher   FAILED       FAILED
+sample-fraud-stream           FAILED       FAILED
+```
+
+### Step 1 — Open the Flink UI
+
+```bash
+kubectl --context=fraud-gitops -n istio-system port-forward svc/istio-ingressgateway 8085:80
+```
+
+Navigate to `http://localhost:8085/flink/`. If the UI is blank or all jobs show `FAILED`, proceed to Step 2.
+
+### Step 2 — Identify the root cause
+
+Check recent jobmanager logs for each failed job:
+
+```bash
+for job in fraud-score-enricher fraud-score-kafka-publisher sample-fraud-stream; do
+  echo "=== $job ==="
+  POD=$(kubectl --context=fraud-gitops get pod -n flink-system -l app=$job -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  [ -n "$POD" ] && kubectl --context=fraud-gitops logs -n flink-system $POD --tail=30 2>&1 | grep -E "Caused by|FAILED|Exception" | tail -5
+done
+```
+
+Common causes and which scenario to follow:
+
+| Log pattern | Scenario |
+|---|---|
+| `UnknownHostException: polaris.polaris.svc.cluster.local` | Scenario 1 (Polaris restart) |
+| `KafkaError.*_TRANSPORT.*Broker transport failure` | Kafka restart — wait for Kafka to stabilise, then follow Scenario 1 steps |
+| `19+ taskmanager pods` / source parallelism=38 | Scenario 2 |
+
+### Step 3 — Restart the jobs
+
+Check current nonce values to know what to increment to:
+
+```bash
+kubectl --context=fraud-gitops get flinkdeployments -n flink-system \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" nonce="}{.spec.job.restartNonce}{"\n"}{end}'
+```
+
+Bump each nonce by 1 (if currently unset, use `1`; if currently `1`, use `2`, etc.):
+
+```bash
+NONCE=1   # increment from current value
+
+kubectl --context=fraud-gitops patch flinkdeployment -n flink-system sample-fraud-stream \
+  --type merge -p "{\"spec\":{\"job\":{\"restartNonce\":$NONCE}}}"
+
+kubectl --context=fraud-gitops patch flinkdeployment -n flink-system fraud-score-enricher \
+  --type merge -p "{\"spec\":{\"job\":{\"restartNonce\":$NONCE}}}"
+
+kubectl --context=fraud-gitops patch flinkdeployment -n flink-system fraud-score-kafka-publisher \
+  --type merge -p "{\"spec\":{\"job\":{\"restartNonce\":$NONCE}}}"
+```
+
+### Step 4 — Verify recovery
+
+```bash
+kubectl --context=fraud-gitops get flinkdeployments -n flink-system -w
+```
+
+All three should reach `RUNNING / STABLE` within 2–3 minutes. Refresh the Flink UI — jobs should appear in the **Running Jobs** tab.
+
+If a job stays in `RESTARTING` for more than 5 minutes, check the jobmanager pod logs for a new error and re-evaluate the root cause.
+
+---
+
 ## FluxCD caveats
 
 Both scenarios involve `kubectl patch` or `kubectl apply` commands that FluxCD will eventually reconcile back to the Git state. This is intentional — the Git state should always be the desired state.

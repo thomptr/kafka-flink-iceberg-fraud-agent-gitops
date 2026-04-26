@@ -4,7 +4,7 @@ resources:
   - ../../base/fraud-alert-agent
 images:
   - name: fraud-alert-agent
-    newTag: "0.1.1"
+    newTag: "0.1.2"
 patches:
   - patch: |-
       - op: replace
