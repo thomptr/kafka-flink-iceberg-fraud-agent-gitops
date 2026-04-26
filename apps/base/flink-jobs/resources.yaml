@@ -251,7 +251,7 @@ spec:
                     key: credentials
                     optional: true
               - name: KSERVE_ENDPOINT
-                value: "http://fraud-detector.kubeflow-user-example-com.svc.cluster.local/v2/models/fraud-detector/infer"
+                value: http://fraud-detector.kubeflow-user-example-com.svc.cluster.local/v2/models/fraud-detector/infer
   taskManager:
     resource:
       memory: 1024m
@@ -287,7 +287,7 @@ spec:
                     key: credentials
                     optional: true
               - name: KSERVE_ENDPOINT
-                value: "http://fraud-detector.kubeflow-user-example-com.svc.cluster.local/v2/models/fraud-detector/infer"
+                value: http://fraud-detector.kubeflow-user-example-com.svc.cluster.local/v2/models/fraud-detector/infer
   job:
     jarURI: local:///opt/flink/lib/sql-runner.jar
     entryClass: org.example.fraud.flink.ModelScorerJob

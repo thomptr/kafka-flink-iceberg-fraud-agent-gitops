@@ -216,7 +216,13 @@ components:
 
     AlertMetrics:
       type: object
-      required: [window_hours, alert_count, auto_resolution_rate, avg_time_to_decision_minutes, false_positive_rate, sla_breach_rate]
+      required:
+        - window_hours
+        - alert_count
+        - auto_resolution_rate
+        - avg_time_to_decision_minutes
+        - false_positive_rate
+        - sla_breach_rate
       properties:
         window_hours:
           type: integer
