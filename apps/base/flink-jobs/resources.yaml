@@ -348,6 +348,14 @@ spec:
                     name: polaris-bootstrap-credentials
                     key: credentials
                     optional: true
+            volumeMounts:
+              - name: flink-scored-kafka-publisher-sql
+                mountPath: /opt/flink/sql
+                readOnly: true
+        volumes:
+          - name: flink-scored-kafka-publisher-sql
+            configMap:
+              name: flink-scored-kafka-publisher-sql
   taskManager:
     resource:
       memory: 1024m

@@ -18,11 +18,12 @@ async def send_slack_notification(alert: dict, final_action: str) -> None:
 
     channel = _CHANNEL_MAP.get(final_action, "#fraud-alerts")
     alert_id = alert.get("alert_id", "unknown")
+    transaction_id = alert.get("transaction_id", "unknown")
     explanation = alert.get("explanation", "")
 
     text = (
         f"*Fraud Alert* [{final_action.upper()}] — {channel}\n"
-        f"Alert: `{alert_id}` | Severity: {alert.get('severity', 'unknown')}\n"
+        f"Alert: `{alert_id}` | Transaction: `{transaction_id}` | Severity: {alert.get('severity', 'unknown')}\n"
         f"Amount: ${alert.get('amount', 0):.2f} | "
         f"Probability: {alert.get('fraud_probability', 0):.2%}\n"
         f"_Explanation_: {explanation[:300]}"

@@ -1,8 +1,6 @@
 -- Flink SQL job: read transactions_scored Iceberg table (streaming) and publish to scored-transactions Kafka topic.
 -- Runtime mode: STREAMING (incremental read from Iceberg via Polaris REST catalog)
 
-SET 'execution.runtime-mode' = 'STREAMING';
-
 -- Polaris REST catalog (same credentials as flink_streaming_job.sql — overridden at runtime by SqlRunner)
 CREATE CATALOG polaris_catalog WITH (
   'type' = 'iceberg',
@@ -42,6 +40,6 @@ SELECT
   CAST(fraud_probability AS DOUBLE),
   CAST(amount_velocity_5min AS DOUBLE),
   CAST(distance_from_home_km AS DOUBLE),
-  CAST(event_time AS TIMESTAMP(3)),
+  CAST(ts AS TIMESTAMP(3)),
   CAST(processing_time AS TIMESTAMP(3))
 FROM polaris_catalog.`default`.transactions_scored;

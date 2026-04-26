@@ -58,7 +58,10 @@ async def _sweep() -> None:
             await send_slack_notification(
                 {
                     "alert_id": str(alert.id),
+                    "transaction_id": alert.transaction_id,
                     "severity": alert.severity,
+                    "amount": float(alert.amount),
+                    "fraud_probability": float(alert.fraud_probability),
                     "explanation": f"SLA breached for alert {alert.id}",
                 },
                 "escalate",
