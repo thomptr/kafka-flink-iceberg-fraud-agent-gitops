@@ -30,8 +30,6 @@ CREATE TABLE scored_transactions_kafka (
   'json.timestamp-format.standard' = 'ISO-8601'
 );
 
-ALTER TABLE polaris_catalog.`default`.transactions_scored SET ('read.parallelism' = '1');
-
 -- Stream scored transactions from Iceberg to Kafka
 INSERT INTO scored_transactions_kafka
 SELECT
@@ -44,4 +42,4 @@ SELECT
   CAST(distance_from_home_km AS DOUBLE),
   CAST(ts AS TIMESTAMP(3)),
   CAST(processing_time AS TIMESTAMP(3))
-FROM polaris_catalog.`default`.transactions_scored /*+ OPTIONS('read.parallelism'='1') */;
+FROM polaris_catalog.`default`.transactions_scored;
