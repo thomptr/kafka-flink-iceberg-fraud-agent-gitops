@@ -111,7 +111,7 @@ kubectl logs -n fraud-agent deploy/fraud-alert-agent | grep node_end
 
 Enable LangSmith remote tracing:
 ```bash
-kubectl create secret generic fraud-agent-secrets --from-literal=langchain-api-key="$LANGSMITH_API_KEY"
+kubectl create secret generic fraud-agent-secrets --from-literal=langchain-api-key=$LANGSMITH_API_KEY
 # Set LANGCHAIN_TRACING_V2=true in configmap.yaml
 ```
 
