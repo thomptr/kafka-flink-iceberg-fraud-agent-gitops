@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 def sample_alert_dict():
     return {
         "alert_id": "abc-123",
+        "transaction_id": "txn-456",
         "severity": "critical",
         "amount": 750.00,
         "fraud_probability": 0.93,
@@ -19,7 +20,7 @@ async def test_send_slack_notification_posts_to_webhook(sample_alert_dict):
     mock_response.status_code = 200
 
     with patch("app.services.notification_service.settings") as mock_settings:
-        mock_settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/test"
+        mock_settings.SLACK_WEBHOOK_URL = "https://localhost/slack-webhook-test"
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -52,7 +53,7 @@ async def test_send_slack_notification_logs_warning_on_http_error(sample_alert_d
     mock_response.status_code = 500
 
     with patch("app.services.notification_service.settings") as mock_settings:
-        mock_settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/test"
+        mock_settings.SLACK_WEBHOOK_URL = "https://localhost/slack-webhook-test"
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -68,7 +69,7 @@ async def test_send_slack_notification_logs_warning_on_http_error(sample_alert_d
 @pytest.mark.asyncio
 async def test_send_slack_notification_logs_warning_on_connection_error(sample_alert_dict):
     with patch("app.services.notification_service.settings") as mock_settings:
-        mock_settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/test"
+        mock_settings.SLACK_WEBHOOK_URL = "https://localhost/slack-webhook-test"
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
