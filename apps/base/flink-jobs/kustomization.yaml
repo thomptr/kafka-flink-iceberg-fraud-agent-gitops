@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: flink-system
 resources:
   - resources.yaml
+  - kafka-topic-scored-transactions.yaml
 configMapGenerator:
   - name: flink-streaming-sql
     files:
@@ -12,5 +13,10 @@ configMapGenerator:
   - name: flink-scored-ddl
     files:
       - flink_scored_ddl.sql
+    options:
+      disableNameSuffixHash: true
+  - name: flink-scored-kafka-publisher-sql
+    files:
+      - flink_scored_kafka_publisher.sql
     options:
       disableNameSuffixHash: true

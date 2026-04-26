@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fraud-agent-config
+  namespace: fraud-agent
+data:
+  OLLAMA_BASE_URL: "http://ollama.ollama.svc.cluster.local:11434"
+  OLLAMA_MODEL: "llama3.1:8b"
+  ANALYSIS_TIMEOUT_SECONDS: "120"
+  FRAUD_THRESHOLD_CRITICAL: "0.85"
+  FRAUD_THRESHOLD_HIGH: "0.70"
+  FRAUD_THRESHOLD_MEDIUM: "0.50"
+  BLOCK_CONFIDENCE_THRESHOLD: "0.85"
+  ESCALATE_CONFIDENCE_THRESHOLD: "0.90"
+  ICEBERG_CATALOG_URI: "http://polaris.polaris.svc.cluster.local:8181/api/catalog"
+  ICEBERG_WAREHOUSE: "quickstart_catalog"
+  ICEBERG_INVESTIGATIONS_NAMESPACE: "fraud"
+  MINIO_ENDPOINT: "http://minio.minio.svc.cluster.local:9000"
+  MLFLOW_TRACKING_URI: "http://mlflow.mlflow.svc.cluster.local:5000"
+  MLFLOW_FRAUD_MODEL_NAME: "fraud-detector"
+  KAFKA_BOOTSTRAP_SERVERS: "platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
+  KAFKA_FRAUD_ALERTS_TOPIC: "fraud-alert-events"
+  KAFKA_FRAUD_NOTIFICATIONS_TOPIC: "fraud-notifications"
+  KAFKA_SCORED_TRANSACTIONS_TOPIC: "scored-transactions"
+  KAFKA_CONSUMER_GROUP_ID: "fraud-alert-agent"
+  LANGCHAIN_TRACING_V2: "false"
+  LANGCHAIN_PROJECT: "fraud-alert-agent"
+  LANGCHAIN_ENDPOINT: "https://api.smith.langchain.com"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.fraud-agent.svc.cluster.local:4317"
+  OTEL_SERVICE_NAME: "fraud-alert-agent"
+  OTEL_TRACES_ENABLED: "true"

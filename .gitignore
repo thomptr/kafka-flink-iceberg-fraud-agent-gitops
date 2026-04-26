@@ -25,3 +25,4 @@ venv/
 dist/
 jobs/**/target/
 .claude/
+local_setup.txt

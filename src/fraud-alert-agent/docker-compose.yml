@@ -1,0 +1,65 @@
+services:
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: fraud
+      POSTGRES_PASSWORD: fraud
+      POSTGRES_DB: fraud_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraud -d fraud_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  fraud-alert-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://fraud:fraud@postgres:5432/fraud_agent
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      FRAUD_API_KEY: ${FRAUD_API_KEY:-dev-test-key}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      ICEBERG_CATALOG_URI: ${ICEBERG_CATALOG_URI:-http://host.docker.internal:8181/api/catalog}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://host.docker.internal:9000}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-host.docker.internal:9092}
+      OTEL_TRACES_ENABLED: "false"
+      LANGCHAIN_TRACING_V2: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  dashboard:
+    image: python:3.11-slim
+    working_dir: /app
+    command: >
+      sh -c "pip install -q streamlit streamlit-autorefresh httpx pandas &&
+             streamlit run dashboard/app.py --server.port=8501 --server.address=0.0.0.0"
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      FRAUD_AGENT_BASE_URL: http://fraud-alert-agent:8000
+      FRAUD_API_KEY: ${FRAUD_API_KEY:-dev-test-key}
+    depends_on:
+      - fraud-alert-agent
+
+volumes:
+  postgres_data:

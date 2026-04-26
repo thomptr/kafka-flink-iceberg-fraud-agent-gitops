@@ -1,0 +1,468 @@
+openapi: "3.1.0"
+info:
+  title: Fraud Alert Agent API
+  version: "1.0.0"
+  description: |
+    REST API for the agentic fraud alert orchestration service.
+    All endpoints require `X-API-Key` header authentication.
+
+servers:
+  - url: http://fraud-alert-agent.fraud-agent.svc.cluster.local:8000
+    description: Cluster-internal service
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+
+    Severity:
+      type: string
+      enum: [critical, high, medium, low]
+
+    AlertStatus:
+      type: string
+      enum: [open, in_review, resolved, escalated, sla_breached]
+
+    RecommendedAction:
+      type: string
+      enum: [block, review, monitor]
+
+    EvidenceItem:
+      type: object
+      required: [rank, type, description, weight]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        type:
+          type: string
+          enum: [transaction_history, pattern_deviation, feature_value, rule_match]
+        description:
+          type: string
+        weight:
+          type: string
+          enum: [high, medium, low]
+
+    FraudAlert:
+      type: object
+      required: [id, transaction_id, user_id, amount, fraud_probability, severity, status, sla_deadline, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        transaction_id:
+          type: string
+        user_id:
+          type: integer
+        amount:
+          type: number
+          format: double
+        merchant:
+          type: string
+          nullable: true
+        fraud_probability:
+          type: number
+          format: double
+          minimum: 0.0
+          maximum: 1.0
+        severity:
+          $ref: "#/components/schemas/Severity"
+        status:
+          $ref: "#/components/schemas/AlertStatus"
+        recommended_action:
+          $ref: "#/components/schemas/RecommendedAction"
+          nullable: true
+        summary:
+          type: string
+          nullable: true
+          description: Human-readable investigation summary; null until investigation completes
+        sla_deadline:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    InvestigationStep:
+      type: object
+      required: [id, step_order, node_name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        step_order:
+          type: integer
+        node_name:
+          type: string
+        tool_name:
+          type: string
+          nullable: true
+        input:
+          type: object
+          nullable: true
+        output:
+          type: object
+          nullable: true
+        duration_ms:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Investigation:
+      type: object
+      required: [id, alert_id, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        alert_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running, completed, timed_out, error]
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceItem"
+        confidence:
+          type: number
+          format: double
+          nullable: true
+        reasoning:
+          type: string
+          nullable: true
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvestigationStep"
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    DecisionEvent:
+      type: object
+      required: [id, alert_id, actor, action, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        alert_id:
+          type: string
+          format: uuid
+        actor:
+          type: string
+        action:
+          type: string
+          enum: [approve, override, escalate, reassign]
+        outcome:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    DecisionRequest:
+      type: object
+      required: [actor, action]
+      properties:
+        actor:
+          type: string
+          description: Analyst identifier (e.g., email or username)
+        action:
+          type: string
+          enum: [approve, override]
+        outcome:
+          type: string
+          description: Required when action is "approve"; must match recommended_action or a valid action
+        reason:
+          type: string
+          description: Required when action is "override"; free-text explanation
+
+    AlertListResponse:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FraudAlert"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+    AlertMetrics:
+      type: object
+      required:
+        - window_hours
+        - alert_count
+        - auto_resolution_rate
+        - avg_time_to_decision_minutes
+        - false_positive_rate
+        - sla_breach_rate
+      properties:
+        window_hours:
+          type: integer
+          description: Rolling window in hours for metric computation
+        alert_count:
+          type: integer
+        auto_resolution_rate:
+          type: number
+          format: double
+          description: Fraction of alerts resolved by agent without human intervention (0.0–1.0)
+        avg_time_to_decision_minutes:
+          type: number
+          format: double
+        false_positive_rate:
+          type: number
+          format: double
+          description: Fraction of Critical alerts overridden as non-fraudulent (0.0–1.0)
+        sla_breach_rate:
+          type: number
+          format: double
+          description: Fraction of Critical alerts that breached the 30-minute SLA (0.0–1.0)
+
+    HealthResponse:
+      type: object
+      required: [status, postgres, ollama]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        postgres:
+          type: string
+          enum: [ok, error]
+        ollama:
+          type: string
+          enum: [ok, error]
+
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+
+  /healthz:
+    get:
+      operationId: healthCheck
+      summary: Liveness and readiness probe
+      security: []
+      responses:
+        "200":
+          description: Service and dependencies healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: One or more dependencies unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/alerts:
+    get:
+      operationId: listAlerts
+      summary: List fraud alerts with optional filters
+      parameters:
+        - name: severity
+          in: query
+          schema:
+            $ref: "#/components/schemas/Severity"
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/AlertStatus"
+        - name: from_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+      responses:
+        "200":
+          description: Paginated alert list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertListResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/alerts/{alert_id}:
+    get:
+      operationId: getAlert
+      summary: Get a single fraud alert by ID
+      parameters:
+        - name: alert_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Alert detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudAlert"
+        "404":
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/alerts/{alert_id}/investigation:
+    get:
+      operationId: getInvestigation
+      summary: Get the full investigation trace for an alert
+      parameters:
+        - name: alert_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Investigation with ordered steps
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Investigation"
+        "404":
+          description: Alert or investigation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/alerts/{alert_id}/decisions:
+    post:
+      operationId: submitDecision
+      summary: Approve or override the agent's recommendation
+      parameters:
+        - name: alert_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionRequest"
+      responses:
+        "201":
+          description: Decision recorded; alert status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionEvent"
+        "400":
+          description: Invalid request (e.g., missing reason on override, alert already resolved)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: listDecisions
+      summary: List all decision events for an alert
+      parameters:
+        - name: alert_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Decision history (append-only)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DecisionEvent"
+        "404":
+          description: Alert not found
+
+  /api/v1/metrics:
+    get:
+      operationId: getMetrics
+      summary: Aggregate operational metrics over a rolling window
+      parameters:
+        - name: window_hours
+          in: query
+          schema:
+            type: integer
+            default: 24
+            minimum: 1
+            maximum: 720
+      responses:
+        "200":
+          description: Aggregate metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertMetrics"

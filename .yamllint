@@ -3,6 +3,8 @@ extends: default
 ignore: |
   **/gotk-components.yaml
   **/kafka-metrics-configmap.yaml
+  **/fraud_training_pipeline.yaml
+  .specify/extensions.yml
 
 rules:
   document-start: disable

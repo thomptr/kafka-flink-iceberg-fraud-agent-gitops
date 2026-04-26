@@ -5,3 +5,5 @@ resources:
   - flink-jobs
   - kafka-ui
   - synthetic-transaction-producer
+  - ollama
+  - fraud-alert-agent

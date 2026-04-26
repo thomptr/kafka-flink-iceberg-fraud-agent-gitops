@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-alert-agent
+  namespace: fraud-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraud-alert-agent
+  template:
+    metadata:
+      labels:
+        app: fraud-alert-agent
+    spec:
+      initContainers:
+        - name: migrate
+          image: fraud-alert-agent:0.1.8
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: fraud-agent-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: database-url
+            - name: FRAUD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: api-key
+      containers:
+        - name: fraud-alert-agent
+          image: fraud-alert-agent:0.1.8
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: fraud-agent-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: database-url
+            - name: FRAUD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: api-key
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: slack-webhook-url
+            - name: POLARIS_CREDENTIAL
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: polaris-credential
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: aws-secret-access-key
+            - name: LANGCHAIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: langchain-api-key
+                  optional: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"

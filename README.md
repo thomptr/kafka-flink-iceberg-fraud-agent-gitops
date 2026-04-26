@@ -36,6 +36,8 @@ minikube start --profile fraud-gitops \
 - MLflow
 - Prometheus
 - Grafana
+- **Ollama** — local LLM inference (llama3.1:8b), deployed to the `ollama` namespace with GPU toleration
+- **Fraud Alert Agent** — 7-node LangGraph multi-agent pipeline: event-driven Kafka consumer (`alert_monitor`) → LLM investigation → `fraud.investigations` Iceberg table; 7 registered LangChain tools; Flink `fraud-score-kafka-publisher` publishes `transactions_scored` → `scored-transactions` Kafka topic
 
 ## Repository Layout
 
@@ -43,13 +45,84 @@ minikube start --profile fraud-gitops \
 clusters/
 infrastructure/
 apps/
-docs/runbooks/
+  base/fraud-alert-agent/    # K8s manifests: deployment, postgres, configmap, tempo, otel-collector
+  base/ollama/               # Ollama GPU deployment + llama3.1:8b pull Job
+  minikube/fraud-alert-agent/
+  minikube/ollama/
+src/
+  fraud-alert-agent/         # FastAPI service + LangGraph agents + tools
+docs/
+  architecture.md            # End-to-end system flow and LangGraph node diagrams
+  runbooks/
+    fraud-alert-agent.md     # Operations runbook (18 procedures)
+specs/
+  004-fraud-alert-agent/     # Feature spec, plan, tasks, quickstart
 scripts/
 ```
 
 - `clusters/minikube/` contains the Flux entrypoint and reconciliation order.
 - `infrastructure/` contains shared platform controllers and cluster-wide config.
 - `apps/` contains workload-level definitions such as MLflow and sample Flink jobs.
+- `src/` contains application source code separate from Flux/GitOps YAML.
+
+## Fraud Alert Agent — Usage
+
+### Local dev quickstart
+
+```bash
+cd src/fraud-alert-agent
+docker compose up -d postgres
+pip install -e ".[dev]"
+alembic upgrade head
+uvicorn app.main:app --reload --port 8000
+```
+
+### Minikube deploy
+
+```bash
+eval $(minikube docker-env -p fraud-gitops)
+docker build -t fraud-alert-agent:0.1.0 src/fraud-alert-agent/
+kubectl apply -k apps/minikube/fraud-alert-agent/
+kubectl apply -k apps/minikube/ollama/
+```
+
+### Benefits
+
+- 80%+ of fraud alerts fully investigated before an analyst opens them
+- P95 investigation time < 60 seconds end-to-end including Ollama inference
+- Complete LangGraph trace log per investigation (node, tool, LLM events) for auditability
+- Event-driven Kafka consumer (sub-5s alert lag) replaces polling
+- LangSmith remote tracing opt-in via single env var for production debugging
+- Iceberg `fraud.investigations` table enables SQL analytics over historical investigation data
+
+### End-to-End Demo
+
+```bash
+# Port-forwards
+kubectl port-forward svc/fraud-alert-agent -n fraud-agent 8000:8000 &
+kubectl port-forward svc/synthetic-transaction-producer -n kafka 8080:8080 &
+
+# 1. Inject a high-probability scored transaction
+curl -X POST http://localhost:8080/inject/scored \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 99999, "amount": 8500.00, "fraud_probability": 0.95, "merchant": "Test Fraud Merchant", "distance_from_home_km": 450.0}'
+
+# 2. Poll for alert (~5s)
+curl -H "X-API-Key: $API_KEY" "http://localhost:8000/api/v1/alerts?severity=critical&status=open"
+
+# 3. Watch investigation complete (~60s)
+curl -H "X-API-Key: $API_KEY" "http://localhost:8000/api/v1/alerts/{ALERT_ID}/investigation"
+
+# 4. Approve/override
+curl -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  "http://localhost:8000/api/v1/alerts/{ALERT_ID}/decisions" \
+  -d '{"actor": "demo@example.com", "action": "approve", "outcome": "block"}'
+
+# 5. View trace logs
+kubectl logs -n fraud-agent deploy/fraud-alert-agent | grep node_end
+```
+
+See [`docs/architecture.md`](docs/architecture.md) for system diagrams and [`specs/004-fraud-alert-agent/quickstart.md`](specs/004-fraud-alert-agent/quickstart.md) for full integration scenarios.
 
 ## Public Repo Rules
 
