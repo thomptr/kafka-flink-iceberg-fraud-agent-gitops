@@ -65,6 +65,8 @@ spec:
               value: "20"
             - name: CONTROL_PORT
               value: "8080"
+            - name: KAFKA_SCORED_TOPIC
+              value: scored-transactions
           # Liveness is disabled until startup succeeds (avoids killing the container during slow Kafka connect).
           startupProbe:
             httpGet:

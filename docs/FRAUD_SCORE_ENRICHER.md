@@ -113,3 +113,48 @@ The job requires these services to be healthy before starting:
 | KServe `fraud-detector` | `kubeflow-user-example-com` | `kubectl get inferenceservice -n kubeflow-user-example-com fraud-detector` |
 
 If any of these are unavailable at startup the job will fail. See [FLINK.md](FLINK.md) for how to restart a failed FlinkDeployment.
+
+
+---
+
+## Downstream: fraud-score-enricher → Fraud Alert Agent
+
+The `fraud-score-enricher` Flink job writes scored rows to Iceberg `polaris_catalog.default.transactions_scored`.
+A second Flink job (`fraud-score-kafka-publisher`) reads this table in streaming mode and publishes each row
+to the `scored-transactions` Kafka topic (3 partitions). The fraud alert agent consumes this topic:
+
+```
+fraud-score-enricher (Flink ModelScorerJob)
+  └─► Iceberg polaris_catalog.default.transactions_scored
+         └─► Flink fraud-score-kafka-publisher (apps/base/flink-jobs/flink_scored_kafka_publisher.sql)
+                └─► Kafka scored-transactions (partitions=3)
+                       └─► alert_monitor (AIOKafkaConsumer, group=fraud-alert-agent)
+                              └─► LangGraph 7-node investigation graph
+                                     └─► fraud.investigations Iceberg table
+```
+
+**Sub-5s alert latency**: `alert_monitor` processes each Kafka message within ~5s of Flink publishing it.
+
+**Triggering a test investigation** (bypasses ML pipeline, useful in dev):
+```bash
+kubectl port-forward svc/synthetic-transaction-producer -n kafka 8080:8080
+curl -X POST http://localhost:8080/inject/scored \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 99999, "amount": 8500.00, "fraud_probability": 0.95, "merchant": "Test Merchant"}'
+```
+
+**Verify the pipeline end-to-end:**
+```bash
+# 1. Check Flink publisher is running
+kubectl get pod -n flink-system -l app=fraud-score-kafka-publisher
+
+# 2. Check scored-transactions has messages
+kubectl exec -n kafka ... -- kafka-console-consumer.sh \
+  --bootstrap-server platform-cluster-kafka-bootstrap:9092 \
+  --topic scored-transactions --max-messages 3
+
+# 3. Check alert_monitor consumer lag (should be 0 or decreasing)
+kubectl exec -n kafka ... -- kafka-consumer-groups.sh \
+  --bootstrap-server platform-cluster-kafka-bootstrap:9092 \
+  --describe --group fraud-alert-agent
+```

@@ -37,6 +37,21 @@ def _build_record() -> dict:
     }
 
 
+def _build_scored_record(overrides: dict) -> dict:
+    now = datetime.now(timezone.utc)
+    return {
+        "transaction_id": overrides.get("transaction_id", str(uuid.uuid4())),
+        "user_id": int(overrides.get("user_id", random.randint(1, 50_000))),
+        "amount": float(overrides.get("amount", round(random.uniform(100.0, 5000.0), 2))),
+        "merchant": overrides.get("merchant", _fake.company()),
+        "fraud_probability": float(overrides.get("fraud_probability", round(random.uniform(0.5, 0.99), 4))),
+        "amount_velocity_5min": float(overrides.get("amount_velocity_5min", round(random.uniform(0.0, 10000.0), 2))),
+        "distance_from_home_km": float(overrides.get("distance_from_home_km", round(random.uniform(0.0, 500.0), 2))),
+        "ts": now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        "processing_time": now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+    }
+
+
 class ProducerState:
     def __init__(self) -> None:
         self._paused = False
@@ -90,6 +105,41 @@ async def _handle_resume(request: web.Request) -> web.Response:
     return web.json_response({"paused": False})
 
 
+async def _handle_inject(request: web.Request) -> web.Response:
+    """POST /inject — publish one transaction to the transactions topic."""
+    if not _auth_ok(request):
+        return _need_auth_response()
+    producer: AIOKafkaProducer | None = request.app.get("producer")
+    if producer is None:
+        return web.json_response({"error": "producer not ready"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    topic = os.environ.get("KAFKA_TOPIC", "transactions")
+    rec = _build_record()
+    rec.update({k: v for k, v in body.items() if k in rec})
+    await producer.send_and_wait(topic, value=rec, key=str(rec["user_id"]))
+    return web.json_response({"injected": True, "topic": topic, "transaction_id": rec["transaction_id"]})
+
+
+async def _handle_inject_scored(request: web.Request) -> web.Response:
+    """POST /inject/scored — publish directly to scored-transactions topic, bypassing ML pipeline."""
+    if not _auth_ok(request):
+        return _need_auth_response()
+    producer: AIOKafkaProducer | None = request.app.get("producer")
+    if producer is None:
+        return web.json_response({"error": "producer not ready"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    scored_topic = os.environ.get("KAFKA_SCORED_TOPIC", "scored-transactions")
+    rec = _build_scored_record(body)
+    await producer.send_and_wait(scored_topic, value=rec, key=str(rec["user_id"]))
+    return web.json_response({"injected": True, "topic": scored_topic, "transaction_id": rec["transaction_id"]})
+
+
 async def _run() -> None:
     state = ProducerState()
     bootstrap = _env("KAFKA_BOOTSTRAP_SERVERS")
@@ -100,10 +150,13 @@ async def _run() -> None:
 
     app = web.Application()
     app["state"] = state
+    app["producer"] = None  # set after successful Kafka connect
     app.router.add_get("/health", _handle_health)
     app.router.add_get("/status", _handle_status)
     app.router.add_post("/pause", _handle_pause)
     app.router.add_post("/resume", _handle_resume)
+    app.router.add_post("/inject", _handle_inject)
+    app.router.add_post("/inject/scored", _handle_inject_scored)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -138,6 +191,9 @@ async def _run() -> None:
                         raise
                     await asyncio.sleep(backoff_sec)
 
+            # Expose producer to inject handlers
+            app["producer"] = producer
+
             interval = 1.0 / max(rate, 0.1)
             while True:
                 if await state.is_paused():
@@ -148,6 +204,7 @@ async def _run() -> None:
                 await producer.send_and_wait(topic, value=rec, key=key)
                 await asyncio.sleep(interval)
         finally:
+            app["producer"] = None
             if producer_started:
                 try:
                     await producer.stop()

@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-pull-llama3
+  namespace: ollama
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-ollama
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until curl -sf http://ollama.ollama.svc.cluster.local:11434/api/tags; do
+                echo "waiting for ollama..."; sleep 5
+              done
+      containers:
+        - name: model-pull
+          image: ollama/ollama:latest
+          command:
+            - ollama
+            - pull
+            - llama3.1:8b
+          env:
+            - name: OLLAMA_HOST
+              value: "http://ollama.ollama.svc.cluster.local:11434"

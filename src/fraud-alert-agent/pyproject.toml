@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fraud-alert-agent"
+version = "0.1.0"
+description = "Agentic fraud alert orchestration service"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.2",
+    "langgraph-checkpoint-postgres",
+    "langchain-ollama",
+    "langchain-core",
+    "fastapi>=0.111",
+    "uvicorn[standard]",
+    "pyiceberg[pyarrow,s3]==0.7.1",
+    "sqlalchemy>=2.0",
+    "asyncpg",
+    "alembic",
+    "httpx",
+    "pydantic-settings",
+    "prometheus-client",
+    "structlog",
+    "mlflow>=2.11",
+    "confluent-kafka>=2.3",
+    "aiokafka>=0.11",
+    "pyarrow>=14",
+    "opentelemetry-sdk>=1.24",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.24",
+    "opentelemetry-instrumentation-fastapi>=0.45b0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "httpx",
+    "testcontainers[postgres]>=4",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

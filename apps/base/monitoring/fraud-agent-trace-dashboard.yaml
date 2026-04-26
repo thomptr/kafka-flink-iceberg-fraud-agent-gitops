@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fraud-agent-trace-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  fraud-agent-traces.json: |
+    {
+      "title": "Fraud Alert Agent — LangGraph Traces",
+      "uid": "fraud-agent-traces",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "title": "Recent Investigations",
+          "type": "traces",
+          "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+          "targets": [{
+            "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+            "queryType": "traceql",
+            "query": "{resource.service.name=\"fraud-alert-agent\" && name=\"investigation\"}",
+            "tableType": "spans"
+          }]
+        },
+        {
+          "id": 2,
+          "title": "Node Execution Duration (p95)",
+          "type": "histogram",
+          "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "targets": [{
+            "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+            "queryType": "traceql",
+            "query": "{resource.service.name=\"fraud-alert-agent\" && name=~\"node\\\\..*\"}",
+            "groupBy": [{"id": "span.name", "type": "attribute"}]
+          }]
+        },
+        {
+          "id": 3,
+          "title": "Tool Call Duration (p95)",
+          "type": "histogram",
+          "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "targets": [{
+            "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+            "queryType": "traceql",
+            "query": "{resource.service.name=\"fraud-alert-agent\" && name=~\"tool\\\\..*\"}",
+            "groupBy": [{"id": "span.name", "type": "attribute"}]
+          }]
+        },
+        {
+          "id": 4,
+          "title": "LLM Inference p95 Latency",
+          "type": "stat",
+          "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+          "gridPos": {"h": 4, "w": 8, "x": 0, "y": 16},
+          "targets": [{
+            "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+            "queryType": "traceql",
+            "query": "{resource.service.name=\"fraud-alert-agent\" && name=~\"llm\\\\..*\"}"
+          }]
+        },
+        {
+          "id": 5,
+          "title": "Node Error Rate",
+          "type": "timeseries",
+          "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+          "gridPos": {"h": 8, "w": 16, "x": 8, "y": 16},
+          "targets": [{
+            "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+            "queryType": "traceql",
+            "query": "{resource.service.name=\"fraud-alert-agent\" && status=error && name=~\"node\\\\..*\"}",
+            "groupBy": [{"id": "span.name", "type": "attribute"}]
+          }]
+        },
+        {
+          "id": 6,
+          "title": "Total Investigations (24h)",
+          "type": "stat",
+          "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+          "gridPos": {"h": 4, "w": 8, "x": 0, "y": 24},
+          "targets": [{
+            "datasource": {"type": "tempo", "uid": "Fraud-Agent-Tempo"},
+            "queryType": "traceql",
+            "query": "{resource.service.name=\"fraud-alert-agent\" && name=\"investigation\"}"
+          }],
+          "options": {"reduceOptions": {"calcs": ["count"]}}
+        }
+      ]
+    }

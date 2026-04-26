@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fraud-agent-tempo-datasource
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Fraud-Agent-Tempo
+        type: tempo
+        url: http://tempo.fraud-agent.svc.cluster.local:3200
+        access: proxy
+        editable: false
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+            filterByTraceID: true
+          nodeGraph:
+            enabled: true
+          serviceMap:
+            datasourceUid: prometheus
+          spanBar:
+            type: duration
