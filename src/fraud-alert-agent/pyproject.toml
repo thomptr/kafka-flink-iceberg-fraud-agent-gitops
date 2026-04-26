@@ -17,6 +17,7 @@ dependencies = [
     "pyiceberg[pyarrow,s3]==0.7.1",
     "sqlalchemy>=2.0",
     "asyncpg",
+    "psycopg[binary]>=3.1",
     "alembic",
     "httpx",
     "pydantic-settings",
