@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Shell variable references in documentation are not secrets"
+regexes = ['''--from-literal=[\w-]+="\$[A-Z_]+"''']
