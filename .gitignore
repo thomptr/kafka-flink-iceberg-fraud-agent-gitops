@@ -26,3 +26,6 @@ dist/
 jobs/**/target/
 .claude/
 local_setup.txt
+src/streamlit-ui/.streamlit/secrets.toml
+src/streamlit-ui/__pycache__/
+src/streamlit-ui/components/__pycache__/

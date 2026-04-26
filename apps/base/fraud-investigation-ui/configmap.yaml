@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fraud-investigation-ui-config
+  namespace: fraud-agent
+data:
+  FRAUD_AGENT_BASE_URL: "http://fraud-alert-agent.fraud-agent.svc.cluster.local:8000"
+  ANALYST_ID: "analyst"
+  ICEBERG_CATALOG_URI: "http://polaris.polaris.svc.cluster.local:8181/api/catalog"
+  ICEBERG_WAREHOUSE: "quickstart_catalog"

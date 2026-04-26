@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import verify_api_key
-from app.services.alert_service import get_alert, list_alerts
+from app.services.alert_service import get_alert, get_alert_by_transaction_id, list_alerts
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -34,6 +34,17 @@ async def get_alerts(
         "page_size": page_size,
         "items": [_serialize_alert(a) for a in alerts],
     }
+
+
+@router.get("/alerts/by-transaction/{transaction_id}")
+async def get_alert_by_transaction(transaction_id: str) -> dict:
+    alert = await get_alert_by_transaction_id(transaction_id)
+    if not alert:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No alert found for transaction_id {transaction_id}",
+        )
+    return _serialize_alert(alert, detailed=True)
 
 
 @router.get("/alerts/{alert_id}")

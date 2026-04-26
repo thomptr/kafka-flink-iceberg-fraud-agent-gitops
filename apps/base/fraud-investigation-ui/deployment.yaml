@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-investigation-ui
+  namespace: fraud-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraud-investigation-ui
+  template:
+    metadata:
+      labels:
+        app: fraud-investigation-ui
+    spec:
+      containers:
+        - name: fraud-investigation-ui
+          image: fraud-investigation-ui:0.1.0
+          ports:
+            - containerPort: 8501
+          envFrom:
+            - configMapRef:
+                name: fraud-investigation-ui-config
+          env:
+            - name: FRAUD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: api-key
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

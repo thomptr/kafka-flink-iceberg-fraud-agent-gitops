@@ -7,3 +7,4 @@ resources:
   - synthetic-transaction-producer
   - ollama
   - fraud-alert-agent
+  - fraud-investigation-ui

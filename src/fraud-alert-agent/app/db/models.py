@@ -125,6 +125,86 @@ class DecisionEvent(Base):
     alert: Mapped["FraudAlert"] = relationship("FraudAlert", back_populates="decisions")
 
 
+class InvestigationSession(Base):
+    __tablename__ = "investigation_sessions"
+    __table_args__ = (
+        Index("ix_investigation_sessions_alert_id", "alert_id"),
+        Index("ix_investigation_sessions_analyst_status", "analyst_id", "status"),
+        Index("ix_investigation_sessions_last_active", "last_active_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    alert_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fraud_alerts.id"), nullable=False
+    )
+    analyst_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    last_active_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    turns: Mapped[list["SessionTurn"]] = relationship(
+        "SessionTurn", back_populates="session", order_by="SessionTurn.turn_number"
+    )
+    conclusion: Mapped["InvestigationConclusion | None"] = relationship(
+        "InvestigationConclusion", back_populates="session", uselist=False
+    )
+
+
+class SessionTurn(Base):
+    __tablename__ = "session_turns"
+    __table_args__ = (
+        UniqueConstraint("session_id", "turn_number", name="uq_session_turns_session_turn"),
+        Index("ix_session_turns_session_id", "session_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("investigation_sessions.id"), nullable=False
+    )
+    turn_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    analyst_input: Mapped[str] = mapped_column(Text, nullable=False)
+    agent_response: Mapped[str] = mapped_column(Text, nullable=False)
+    tool_calls: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    session: Mapped["InvestigationSession"] = relationship("InvestigationSession", back_populates="turns")
+
+
+class InvestigationConclusion(Base):
+    __tablename__ = "investigation_conclusions"
+    __table_args__ = (
+        UniqueConstraint("alert_id", name="uq_investigation_conclusions_alert_id"),
+        Index("ix_investigation_conclusions_session_id", "session_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("investigation_sessions.id"), nullable=False
+    )
+    alert_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fraud_alerts.id"), nullable=False
+    )
+    outcome: Mapped[str] = mapped_column(String(30), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    analyst_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    session: Mapped["InvestigationSession"] = relationship(
+        "InvestigationSession", back_populates="conclusion"
+    )
+
+
 class AlertMonitorCursor(Base):
     __tablename__ = "alert_monitor_cursor"
 

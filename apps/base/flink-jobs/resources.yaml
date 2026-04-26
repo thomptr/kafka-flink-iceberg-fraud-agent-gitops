@@ -396,4 +396,4 @@ spec:
     args:
       - "/opt/flink/sql/flink_scored_kafka_publisher.sql"
     parallelism: 1
-    upgradeMode: last-state
+    upgradeMode: stateless

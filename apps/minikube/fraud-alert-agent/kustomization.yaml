@@ -5,6 +5,11 @@ resources:
 images:
   - name: fraud-alert-agent
     newTag: "0.1.1"
+configMapGenerator:
+  - name: fraud-agent-config
+    behavior: merge
+    literals:
+      - INVESTIGATION_UI_BASE_URL=http://localhost:8502
 patches:
   - patch: |-
       - op: replace

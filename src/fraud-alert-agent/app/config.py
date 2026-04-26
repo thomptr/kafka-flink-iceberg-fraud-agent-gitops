@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     ANALYSIS_TIMEOUT_SECONDS: int = 30
     FRAUD_API_KEY: str
     SLACK_WEBHOOK_URL: str = ""
+    SESSION_TIMEOUT_MINUTES: int = 60
+    INVESTIGATION_UI_BASE_URL: str = ""
 
     FRAUD_THRESHOLD_CRITICAL: float = 0.85
     FRAUD_THRESHOLD_HIGH: float = 0.70

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-investigation-ui
+  namespace: fraud-agent
+spec:
+  selector:
+    app: fraud-investigation-ui
+  ports:
+    - port: 80
+      targetPort: 8501
+  type: ClusterIP

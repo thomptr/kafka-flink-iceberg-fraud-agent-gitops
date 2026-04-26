@@ -29,3 +29,6 @@ data:
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.fraud-agent.svc.cluster.local:4317"
   OTEL_SERVICE_NAME: "fraud-alert-agent"
   OTEL_TRACES_ENABLED: "true"
+  # When set, Slack alerts include a direct link to the investigation UI
+  # Point this to the fraud-investigation-ui service URL
+  INVESTIGATION_UI_BASE_URL: "http://fraud-investigation-ui.fraud-agent.svc.cluster.local"

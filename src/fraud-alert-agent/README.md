@@ -160,3 +160,45 @@ eval $(minikube docker-env)
 docker build -t fraud-alert-agent:0.1.0 src/fraud-alert-agent/
 kubectl apply -k apps/minikube/fraud-alert-agent/
 ```
+
+## Investigation Sessions
+
+Human-in-the-loop fraud investigation is provided by two new components added in feature 005:
+
+### New API Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/v1/alerts/{id}/investigation-sessions` | Open a session; returns Turn 1 explanation |
+| `GET /api/v1/investigation-sessions/{id}` | Session metadata |
+| `POST /api/v1/investigation-sessions/{id}/turns` | Submit a question; get tool-grounded response |
+| `GET /api/v1/investigation-sessions/{id}/turns` | Full transcript |
+| `POST /api/v1/investigation-sessions/{id}/conclude` | Record outcome (confirmed_fraud / false_positive / escalate) |
+| `POST /api/v1/investigate` | Direct entry: accepts `transaction_id`, resolves to alert, opens session |
+| `GET /api/v1/alerts/by-transaction/{transaction_id}` | Look up alert by transaction ID |
+
+### Investigation UI (Streamlit)
+
+The `src/streamlit-ui/` package provides the analyst chat interface.
+
+```bash
+cd src/streamlit-ui
+pip install -e ".[dev]"
+FRAUD_AGENT_BASE_URL=http://localhost:8000 FRAUD_API_KEY=dev-secret streamlit run app.py --server.port 8502
+```
+
+Open `http://localhost:8502`. Deep-link format: `http://localhost:8502/?transaction_id=<uuid>`
+
+### Configuration
+
+| Variable | Description |
+|---|---|
+| `SESSION_TIMEOUT_MINUTES` | Minutes before an idle session is abandoned (default: 60) |
+| `INVESTIGATION_UI_BASE_URL` | Base URL appended to Slack alerts as an investigation deep-link |
+
+### Database Migration
+
+```bash
+alembic upgrade head   # adds investigation_sessions, session_turns, investigation_conclusions
+alembic downgrade -1   # rolls back all three tables
+```

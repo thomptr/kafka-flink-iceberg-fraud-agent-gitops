@@ -45,18 +45,22 @@ minikube start --profile fraud-gitops \
 clusters/
 infrastructure/
 apps/
-  base/fraud-alert-agent/    # K8s manifests: deployment, postgres, configmap, tempo, otel-collector
-  base/ollama/               # Ollama GPU deployment + llama3.1:8b pull Job
+  base/fraud-alert-agent/      # K8s manifests: deployment, postgres, configmap, tempo, otel-collector
+  base/fraud-investigation-ui/ # K8s manifests: Streamlit investigation UI deployment + service
+  base/ollama/                 # Ollama GPU deployment + llama3.1:8b pull Job
   minikube/fraud-alert-agent/
+  minikube/fraud-investigation-ui/
   minikube/ollama/
 src/
-  fraud-alert-agent/         # FastAPI service + LangGraph agents + tools
+  fraud-alert-agent/           # FastAPI service + LangGraph agents + tools
+  streamlit-ui/                # Analyst investigation chat UI (Streamlit)
 docs/
-  architecture.md            # End-to-end system flow and LangGraph node diagrams
+  architecture.md              # End-to-end system flow and LangGraph node diagrams
   runbooks/
-    fraud-alert-agent.md     # Operations runbook (18 procedures)
+    fraud-alert-agent.md       # Operations runbook (includes investigation session procedures)
 specs/
-  004-fraud-alert-agent/     # Feature spec, plan, tasks, quickstart
+  004-fraud-alert-agent/       # Feature spec, plan, tasks, quickstart
+  005-fraud-investigation-agent/ # Investigation agent spec, plan, tasks, quickstart
 scripts/
 ```
 
