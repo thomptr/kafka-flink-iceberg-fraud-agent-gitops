@@ -19,6 +19,14 @@ def get_catalog() -> RestCatalog:
             "uri": settings.ICEBERG_CATALOG_URI,
             "credential": settings.POLARIS_CREDENTIAL,
             "warehouse": settings.ICEBERG_WAREHOUSE,
+            "scope": "PRINCIPAL_ROLE:ALL",
+            # Disable vended credentials — use static MinIO keys instead
+            "header.X-Iceberg-Access-Delegation": "",
+            "s3.endpoint": settings.MINIO_ENDPOINT,
+            "s3.access-key-id": settings.AWS_ACCESS_KEY_ID,
+            "s3.secret-access-key": settings.AWS_SECRET_ACCESS_KEY,
+            "s3.region": "us-east-1",
+            "client.region": "us-east-1",
         },
     )
 

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     ESCALATE_CONFIDENCE_THRESHOLD: float = 0.90
 
     ICEBERG_CATALOG_URI: str = "http://localhost:8181/api/catalog"
-    ICEBERG_WAREHOUSE: str = "fraud_warehouse"
+    ICEBERG_WAREHOUSE: str = "quickstart_catalog"
     ICEBERG_INVESTIGATIONS_NAMESPACE: str = "fraud"
     POLARIS_CREDENTIAL: str = ""
     MINIO_ENDPOINT: str = "http://localhost:9000"
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = "minioadmin"
 
     MLFLOW_TRACKING_URI: str = "http://mlflow.mlflow.svc.cluster.local:5000"
-    MLFLOW_FRAUD_MODEL_NAME: str = "fraud-score-xgboost"
+    MLFLOW_FRAUD_MODEL_NAME: str = "fraud-detector"
 
     KAFKA_BOOTSTRAP_SERVERS: str = "platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
     KAFKA_FRAUD_ALERTS_TOPIC: str = "fraud-alert-events"

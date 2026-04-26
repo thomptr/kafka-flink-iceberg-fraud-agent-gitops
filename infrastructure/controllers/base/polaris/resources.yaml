@@ -36,6 +36,10 @@ spec:
         name: polaris-storage-credentials
         awsAccessKeyId: awsAccessKeyId
         awsSecretAccessKey: awsSecretAccessKey
+    livenessProbe:
+      failureThreshold: 6
+    readinessProbe:
+      failureThreshold: 6
     extraEnv:
       - name: POLARIS_BOOTSTRAP_CREDENTIALS
         valueFrom:

@@ -15,7 +15,7 @@ spec:
     spec:
       initContainers:
         - name: migrate
-          image: fraud-alert-agent:0.1.0
+          image: fraud-alert-agent:0.1.8
           command: ["alembic", "upgrade", "head"]
           envFrom:
             - configMapRef:
@@ -26,9 +26,14 @@ spec:
                 secretKeyRef:
                   name: fraud-agent-secrets
                   key: database-url
+            - name: FRAUD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-agent-secrets
+                  key: api-key
       containers:
         - name: fraud-alert-agent
-          image: fraud-alert-agent:0.1.0
+          image: fraud-alert-agent:0.1.8
           ports:
             - containerPort: 8000
           envFrom:

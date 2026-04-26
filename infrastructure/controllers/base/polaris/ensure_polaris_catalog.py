@@ -326,6 +326,9 @@ def resolve_client_credentials() -> tuple[str, str]:
     )
 
 
+# Namespaces that must always exist in the catalog, regardless of table state.
+NAMESPACES_TO_ENSURE = ["default", "fraud"]
+
 # Tables to restore after a Polaris wipe.  Each entry: (namespace, table_name, s3_prefix_under_bucket).
 # The s3_prefix is relative to the bucket root (no leading slash).
 TABLES_TO_RESTORE = [
@@ -380,6 +383,9 @@ def main() -> int:
         region,
     )
 
+    for namespace in NAMESPACES_TO_ENSURE:
+        ensure_namespace(catalog_uri, token, catalog_name, namespace)
+
     # Re-register Iceberg tables from existing MinIO metadata so Flink jobs don't need
     # a full restart after a Polaris wipe.
     if access_key and secret_key:
@@ -390,15 +396,11 @@ def main() -> int:
             access_key_id=access_key,
             secret_access_key=secret_key,
         )
-        namespaces_ensured: set[str] = set()
         for namespace, table_name, s3_prefix in TABLES_TO_RESTORE:
             metadata_uri = find_latest_metadata(s3, bucket, s3_prefix)
             if metadata_uri is None:
                 print(f"[s3] no metadata found for '{namespace}.{table_name}' — skipping (table not yet created)")
                 continue
-            if namespace not in namespaces_ensured:
-                ensure_namespace(catalog_uri, token, catalog_name, namespace)
-                namespaces_ensured.add(namespace)
             register_table_if_missing(
                 catalog_uri, token, catalog_name, namespace, table_name, metadata_uri
             )

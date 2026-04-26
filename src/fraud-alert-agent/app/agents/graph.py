@@ -9,7 +9,6 @@ from app.agents.report_node import report_node
 from app.agents.state import FraudInvestigationState
 from app.agents.supervisor_node import supervisor_node, ROUTE_CRITICAL, ROUTE_STANDARD
 from app.agents.triage_node import triage_node
-from app.config import settings
 from app.tools.iceberg_query_tool import list_iceberg_tables, query_iceberg_table
 from app.tools.kafka_producer_tool import (
     list_kafka_topics,
@@ -39,10 +38,10 @@ def _route_from_triage(state: FraudInvestigationState) -> str:
     return "escalation_node"
 
 
-async def build_graph() -> None:
+async def build_graph(checkpointer: AsyncPostgresSaver) -> None:
     global compiled_graph, _checkpointer
 
-    _checkpointer = AsyncPostgresSaver.from_conn_string(settings.DATABASE_URL)
+    _checkpointer = checkpointer
     await _checkpointer.setup()
 
     builder = StateGraph(FraudInvestigationState)

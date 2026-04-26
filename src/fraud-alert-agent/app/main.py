@@ -27,21 +27,25 @@ async def lifespan(app: FastAPI):
         os.environ["LANGCHAIN_PROJECT"] = settings.LANGCHAIN_PROJECT
         os.environ["LANGCHAIN_ENDPOINT"] = settings.LANGCHAIN_ENDPOINT
 
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from app.agents.graph import build_graph
-    await build_graph()
-
     from app.workers.alert_monitor import run_alert_monitor
     from app.workers.sla_worker import run_sla_worker
 
-    monitor_task = asyncio.create_task(run_alert_monitor())
-    sla_task = asyncio.create_task(run_sla_worker())
+    pg_conn_string = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
+    async with AsyncPostgresSaver.from_conn_string(pg_conn_string) as checkpointer:
+        await build_graph(checkpointer)
 
-    log.info("fraud_alert_agent_started")
-    yield
+        monitor_task = asyncio.create_task(run_alert_monitor())
+        sla_task = asyncio.create_task(run_sla_worker())
 
-    monitor_task.cancel()
-    sla_task.cancel()
-    await asyncio.gather(monitor_task, sla_task, return_exceptions=True)
+        log.info("fraud_alert_agent_started")
+        yield
+
+        monitor_task.cancel()
+        sla_task.cancel()
+        await asyncio.gather(monitor_task, sla_task, return_exceptions=True)
+
     await engine.dispose()
     shutdown_tracing()
     log.info("fraud_alert_agent_stopped")

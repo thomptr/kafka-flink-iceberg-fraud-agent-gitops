@@ -6,6 +6,8 @@ RUN pip install --upgrade pip && pip install --no-cache-dir -e ".[dev]" 2>/dev/n
 
 FROM python:3.11-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
+
 RUN useradd -r -u 1000 -m appuser
 WORKDIR /app
 
