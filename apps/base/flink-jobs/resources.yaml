@@ -123,6 +123,7 @@ spec:
     fs.s3a.aws.credentials.provider: org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
     metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
     metrics.reporter.prom.port: "9249"
+    table.exec.resource.default-parallelism: "1"
   jobManager:
     resource:
       memory: 1024m
@@ -216,6 +217,7 @@ spec:
     fs.s3a.aws.credentials.provider: org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
     metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
     metrics.reporter.prom.port: "9249"
+    table.exec.resource.default-parallelism: "1"
   jobManager:
     resource:
       memory: 1024m
@@ -292,7 +294,7 @@ spec:
     jarURI: local:///opt/flink/lib/sql-runner.jar
     entryClass: org.example.fraud.flink.ModelScorerJob
     parallelism: 1
-    upgradeMode: last-state
+    upgradeMode: stateless
 ---
 apiVersion: flink.apache.org/v1beta1
 kind: FlinkDeployment
@@ -314,6 +316,7 @@ spec:
     fs.s3a.aws.credentials.provider: org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
     metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
     metrics.reporter.prom.port: "9249"
+    table.exec.resource.default-parallelism: "1"
   jobManager:
     resource:
       memory: 1024m
