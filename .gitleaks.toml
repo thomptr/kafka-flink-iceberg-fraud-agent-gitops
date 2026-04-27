@@ -4,3 +4,10 @@ useDefault = true
 [allowlist]
 description = "Shell variable references in documentation are not secrets"
 regexes = ['''--from-literal=[\w-]+="\$[A-Z_]+"''']
+paths = ['''src/streamlit-ui/\.streamlit/secrets\.toml''']
+commits = [
+  "e2f91c87c12d33ed9183f5e506b77b524e47be15",
+  "432d197b67af7462cf37038e7ed700deb104adb0",
+  "7084f216466712ab8a60537196180a402d7e5edf",
+  "5d01e09d29c428858c7018fdcef423256b70f2e0",
+]

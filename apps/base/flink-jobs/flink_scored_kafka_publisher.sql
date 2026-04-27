@@ -42,4 +42,5 @@ SELECT
   CAST(distance_from_home_km AS DOUBLE),
   CAST(ts AS TIMESTAMP(3)),
   CAST(processing_time AS TIMESTAMP(3))
-FROM polaris_catalog.`default`.transactions_scored;
+FROM polaris_catalog.`default`.transactions_scored
+/*+ OPTIONS('streaming'='true', 'monitor-interval'='10s') */;

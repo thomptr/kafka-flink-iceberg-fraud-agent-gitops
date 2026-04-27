@@ -60,6 +60,14 @@ async def get_alert(alert_id: str) -> FraudAlert | None:
         return result.scalars().first()
 
 
+async def get_alert_by_transaction_id(transaction_id: str) -> FraudAlert | None:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(FraudAlert).where(FraudAlert.transaction_id == transaction_id)
+        )
+        return result.scalars().first()
+
+
 async def update_alert_status(alert_id: str, status: str) -> None:
     async with AsyncSessionLocal() as session:
         result = await session.execute(

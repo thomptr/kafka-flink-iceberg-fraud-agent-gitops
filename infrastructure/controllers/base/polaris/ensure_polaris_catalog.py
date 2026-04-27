@@ -276,6 +276,30 @@ def find_latest_metadata(
     return f"s3://{bucket}/{candidates[0][1]}"
 
 
+def ensure_catalog_role_grant(
+    management_uri: str,
+    token: str,
+    catalog_name: str,
+    role_name: str,
+    privilege: str,
+    grant_type: str = "catalog",
+) -> None:
+    """Add a privilege grant to a catalog role if not already present."""
+    url = f"{management_uri.rstrip('/')}/catalogs/{catalog_name}/catalog-roles/{role_name}/grants"
+    status, payload = http_request(
+        "PUT",
+        url,
+        token=token,
+        body={"grant": {"type": grant_type, "privilege": privilege}},
+    )
+    if status in (200, 201):
+        print(f"[polaris] granted '{privilege}' to catalog role '{role_name}'")
+    elif status == 409:
+        print(f"[polaris] grant '{privilege}' on '{role_name}' already exists")
+    else:
+        print(f"[warn] could not grant '{privilege}' to '{role_name}' ({status}): {payload}")
+
+
 def register_table_if_missing(
     catalog_uri: str,
     token: str,
@@ -382,6 +406,11 @@ def main() -> int:
         minio_internal_endpoint,
         region,
     )
+
+    # CATALOG_MANAGE_CONTENT is required for pyiceberg clients to load table metadata.
+    # catalog_admin only gets CATALOG_MANAGE_ACCESS + CATALOG_MANAGE_METADATA by default,
+    # which is insufficient for LOAD_TABLE_WITH_READ_DELEGATION (needed for S3-backed catalogs).
+    ensure_catalog_role_grant(management_uri, token, catalog_name, "catalog_admin", "CATALOG_MANAGE_CONTENT")
 
     for namespace in NAMESPACES_TO_ENSURE:
         ensure_namespace(catalog_uri, token, catalog_name, namespace)

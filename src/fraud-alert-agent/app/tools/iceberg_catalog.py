@@ -5,23 +5,34 @@ import structlog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.exceptions import NoSuchNamespaceError
 from pyiceberg.table import Table
+from requests import Session
 
 from app.config import settings
 
 log = structlog.get_logger(__name__)
 
 
+class _NoVendingCatalog(RestCatalog):
+    """pyiceberg 0.7.1 unconditionally sets X-Iceberg-Access-Delegation: vended-credentials
+    in _create_session, which causes Polaris to attempt STS credential vending. MinIO does
+    not support STS, so Polaris returns 400. Removing the header here makes Polaris skip
+    credential vending and return plain table metadata instead."""
+
+    def _create_session(self) -> Session:
+        session = super()._create_session()
+        session.headers.pop("X-Iceberg-Access-Delegation", None)
+        return session
+
+
 @lru_cache(maxsize=1)
 def get_catalog() -> RestCatalog:
-    return RestCatalog(
+    return _NoVendingCatalog(
         name="polaris",
         **{
             "uri": settings.ICEBERG_CATALOG_URI,
             "credential": settings.POLARIS_CREDENTIAL,
             "warehouse": settings.ICEBERG_WAREHOUSE,
             "scope": "PRINCIPAL_ROLE:ALL",
-            # Disable vended credentials — use static MinIO keys instead
-            "header.X-Iceberg-Access-Delegation": "",
             "s3.endpoint": settings.MINIO_ENDPOINT,
             "s3.access-key-id": settings.AWS_ACCESS_KEY_ID,
             "s3.secret-access-key": settings.AWS_SECRET_ACCESS_KEY,

@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     ANALYSIS_TIMEOUT_SECONDS: int = 30
     FRAUD_API_KEY: str
     SLACK_WEBHOOK_URL: str = ""
+    SESSION_TIMEOUT_MINUTES: int = 60
+    INVESTIGATION_UI_BASE_URL: str = ""
 
     FRAUD_THRESHOLD_CRITICAL: float = 0.85
     FRAUD_THRESHOLD_HIGH: float = 0.70
@@ -17,7 +19,7 @@ class Settings(BaseSettings):
 
     ICEBERG_CATALOG_URI: str = "http://localhost:8181/api/catalog"
     ICEBERG_WAREHOUSE: str = "quickstart_catalog"
-    ICEBERG_INVESTIGATIONS_NAMESPACE: str = "fraud"
+    ICEBERG_INVESTIGATIONS_NAMESPACE: str = "default"
     POLARIS_CREDENTIAL: str = ""
     MINIO_ENDPOINT: str = "http://localhost:9000"
     AWS_ACCESS_KEY_ID: str = "minioadmin"

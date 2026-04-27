@@ -28,6 +28,11 @@ async def send_slack_notification(alert: dict, final_action: str) -> None:
         f"Probability: {alert.get('fraud_probability', 0):.2%}\n"
         f"_Explanation_: {explanation[:300]}"
     )
+    if settings.INVESTIGATION_UI_BASE_URL:
+        text += (
+            f"\n🔍 *Investigate in UI*: "
+            f"{settings.INVESTIGATION_UI_BASE_URL}/?transaction_id={transaction_id}"
+        )
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

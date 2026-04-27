@@ -1,13 +1,13 @@
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import structlog
 from sqlalchemy import select
 
 from app.config import settings
 from app.db.base import AsyncSessionLocal
-from app.db.models import DecisionEvent, FraudAlert
+from app.db.models import DecisionEvent, FraudAlert, InvestigationSession
 
 log = structlog.get_logger(__name__)
 
@@ -27,11 +27,37 @@ async def run_sla_worker() -> None:
     log.info("sla_worker_stopped")
 
 
+async def _sweep_inactive_sessions() -> None:
+    timeout_minutes = getattr(settings, "SESSION_TIMEOUT_MINUTES", 60)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(InvestigationSession).where(
+                InvestigationSession.status == "active",
+                InvestigationSession.last_active_at < cutoff,
+            )
+        )
+        stale = result.scalars().all()
+        for s in stale:
+            idle_minutes = int((datetime.now(timezone.utc) - s.last_active_at).total_seconds() / 60)
+            s.status = "abandoned"
+            s.updated_at = datetime.now(timezone.utc)
+            log.info(
+                "session_abandoned",
+                session_id=str(s.id),
+                analyst_id=s.analyst_id,
+                idle_minutes=idle_minutes,
+            )
+        if stale:
+            await session.commit()
+
+
 async def _sweep() -> None:
     from app.services.sla_service import get_breached_alerts
     from app.services.notification_service import send_slack_notification
     from app.tools.kafka_producer_tool import publish_kafka_event
 
+    await _sweep_inactive_sessions()
     alerts = await get_breached_alerts()
     for alert in alerts:
         try:

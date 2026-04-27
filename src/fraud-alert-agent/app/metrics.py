@@ -78,6 +78,23 @@ kafka_consumer_lag = Gauge(
     ["topic", "group_id"],
 )
 
+investigation_session_opens_total = Counter(
+    "investigation_session_opens_total",
+    "Total investigation sessions opened",
+)
+
+investigation_session_turn_duration_seconds = Histogram(
+    "investigation_session_turn_duration_seconds",
+    "Duration of investigation session turns (LLM + tools)",
+    buckets=[1, 2, 5, 10, 15, 20, 30],
+)
+
+investigation_conclusions_total = Counter(
+    "investigation_conclusions_total",
+    "Total investigation conclusions recorded",
+    ["outcome"],
+)
+
 investigation_node_duration_seconds = Histogram(
     "investigation_node_duration_seconds",
     "Per-node duration for LangGraph investigation",

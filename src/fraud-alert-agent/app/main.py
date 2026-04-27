@@ -29,12 +29,14 @@ async def lifespan(app: FastAPI):
 
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from app.agents.graph import build_graph
+    from app.agents.investigation_session_graph import set_session_checkpointer
     from app.workers.alert_monitor import run_alert_monitor
     from app.workers.sla_worker import run_sla_worker
 
     pg_conn_string = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
     async with AsyncPostgresSaver.from_conn_string(pg_conn_string) as checkpointer:
         await build_graph(checkpointer)
+        set_session_checkpointer(checkpointer)
 
         monitor_task = asyncio.create_task(run_alert_monitor())
         sla_task = asyncio.create_task(run_sla_worker())
@@ -87,7 +89,7 @@ async def healthz() -> JSONResponse:
 
     # Polaris / Iceberg
     try:
-        tables = list_iceberg_tables.invoke({"namespace": "fraud"})
+        tables = list_iceberg_tables.invoke({"namespace": settings.ICEBERG_INVESTIGATIONS_NAMESPACE})
         checks["polaris"] = "ok"
     except Exception as exc:
         checks["polaris"] = f"error: {exc}"
@@ -124,11 +126,12 @@ async def healthz() -> JSONResponse:
 
 # Routers are wired in as they are implemented
 def _mount_routers() -> None:
-    from app.api import alerts, investigations, decisions, metrics_api
+    from app.api import alerts, investigations, decisions, metrics_api, sessions
     app.include_router(alerts.router, prefix="/api/v1")
     app.include_router(investigations.router, prefix="/api/v1")
     app.include_router(decisions.router, prefix="/api/v1")
     app.include_router(metrics_api.router, prefix="/api/v1")
+    app.include_router(sessions.router, prefix="/api/v1")
 
 
 _mount_routers()

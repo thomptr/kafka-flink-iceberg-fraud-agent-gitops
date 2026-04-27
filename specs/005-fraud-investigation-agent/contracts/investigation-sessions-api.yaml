@@ -1,0 +1,382 @@
+openapi: "3.1.0"
+info:
+  title: Fraud Investigation Sessions API
+  description: |
+    New endpoints added to the existing fraud-alert-agent FastAPI service to support
+    interactive human-in-the-loop investigation sessions. All endpoints require
+    X-API-Key authentication (existing scheme).
+  version: "1.0.0"
+
+servers:
+  - url: http://fraud-alert-agent.fraud-agent.svc.cluster.local:8000
+    description: In-cluster service endpoint
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    SessionStatus:
+      type: string
+      enum: [active, concluded, abandoned]
+
+    OutcomeEnum:
+      type: string
+      enum: [confirmed_fraud, false_positive, escalate]
+
+    InvestigationSession:
+      type: object
+      required: [session_id, alert_id, analyst_id, status, created_at, last_active_at]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        alert_id:
+          type: string
+          format: uuid
+        analyst_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        created_at:
+          type: string
+          format: date-time
+        last_active_at:
+          type: string
+          format: date-time
+
+    SessionTurn:
+      type: object
+      required: [turn_number, analyst_input, agent_response, created_at]
+      properties:
+        turn_number:
+          type: integer
+          minimum: 1
+        analyst_input:
+          type: string
+        agent_response:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    InvestigationConclusion:
+      type: object
+      required: [conclusion_id, session_id, alert_id, outcome, analyst_id, created_at]
+      properties:
+        conclusion_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        alert_id:
+          type: string
+          format: uuid
+        outcome:
+          $ref: "#/components/schemas/OutcomeEnum"
+        notes:
+          type: string
+          nullable: true
+        analyst_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    OpenSessionResponse:
+      type: object
+      required: [session_id, alert_id, status, initial_turn]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        alert_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        initial_turn:
+          $ref: "#/components/schemas/SessionTurn"
+          description: Turn 1 — the agent's initial explanation, auto-generated on session open.
+
+    ErrorDetail:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+
+    ByTransactionRequest:
+      type: object
+      required: [transaction_id, analyst_id]
+      properties:
+        transaction_id:
+          type: string
+          description: The transaction ID to resolve to a fraud alert
+        analyst_id:
+          type: string
+          description: Analyst identity for session ownership
+
+paths:
+  /api/v1/investigate:
+    post:
+      summary: Open an investigation session directly from a transaction ID
+      description: |
+        Resolves the transaction_id to a FraudAlert, creates an InvestigationSession,
+        and runs the initial explanation turn — all in one call. Intended for deep-link
+        entry from Slack alerts or other notification systems.
+      operationId: runInvestigation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ByTransactionRequest"
+      responses:
+        "201":
+          description: Session opened; initial explanation included as Turn 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenSessionResponse"
+        "404":
+          description: No alert found for the given transaction_id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "401":
+          description: Missing or invalid API key
+
+  /api/v1/alerts/by-transaction/{transaction_id}:
+    get:
+      summary: Look up a fraud alert by transaction ID
+      description: |
+        Returns the FraudAlert associated with the given transaction_id.
+        Useful for resolving a transaction ID from Kafka or Slack into the alert
+        UUID before opening an investigation session.
+      operationId: getAlertByTransactionId
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Alert found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestigationSession"
+        "404":
+          description: No alert found for this transaction_id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "401":
+          description: Missing or invalid API key
+
+
+  /api/v1/alerts/{alert_id}/investigation-sessions:
+    post:
+      summary: Open a new investigation session for a fraud alert
+      description: |
+        Creates an InvestigationSession and immediately generates the initial explanation turn
+        (Turn 1) by invoking the investigation session graph. Returns the session ID and the
+        agent's initial explanation of why the transaction was flagged.
+      operationId: openInvestigationSession
+      parameters:
+        - name: alert_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Analyst-Id
+          in: header
+          required: true
+          description: Identifier of the analyst opening the session (username or employee ID)
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Session opened; initial explanation included as Turn 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenSessionResponse"
+        "404":
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "401":
+          description: Missing or invalid API key
+
+  /api/v1/investigation-sessions/{session_id}:
+    get:
+      summary: Get investigation session metadata
+      operationId: getInvestigationSession
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Session metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestigationSession"
+        "404":
+          description: Session not found
+
+  /api/v1/investigation-sessions/{session_id}/turns:
+    post:
+      summary: Submit an analyst question and receive the agent's grounded response
+      description: |
+        Appends a new turn to the investigation session. Invokes the LangGraph session graph
+        with the analyst's question, retrieving tool-grounded evidence as needed. Returns
+        after the agent has produced a complete response (non-streaming for v1).
+        Returns HTTP 409 if the session is already concluded or abandoned.
+      operationId: createSessionTurn
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  minLength: 1
+                  description: The analyst's natural-language question
+      responses:
+        "200":
+          description: Agent response for this turn
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionTurn"
+        "404":
+          description: Session not found
+        "409":
+          description: Session is concluded or abandoned — no new turns accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
+    get:
+      summary: Retrieve the full session transcript
+      operationId: listSessionTurns
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Ordered list of all turns in the session
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionTurn"
+        "404":
+          description: Session not found
+
+  /api/v1/investigation-sessions/{session_id}/conclude:
+    post:
+      summary: Record the analyst's investigation conclusion
+      description: |
+        Closes the investigation session and records the analyst's outcome. Also submits a
+        DecisionEvent to the existing decisions endpoint to update the FraudAlert status.
+        Returns HTTP 409 if another analyst has already concluded this alert.
+      operationId: concludeSession
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome:
+                  $ref: "#/components/schemas/OutcomeEnum"
+                notes:
+                  type: string
+                  nullable: true
+      responses:
+        "201":
+          description: Conclusion recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestigationConclusion"
+        "404":
+          description: Session not found
+        "409":
+          description: Alert already concluded by another analyst
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              example:
+                detail: "Alert already concluded as 'confirmed_fraud' by analyst@example.com at 2026-04-26T14:32:00Z"
+
+    get:
+      summary: Retrieve the recorded conclusion for a session
+      operationId: getSessionConclusion
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The recorded conclusion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestigationConclusion"
+        "404":
+          description: No conclusion recorded for this session
