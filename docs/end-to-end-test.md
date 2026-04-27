@@ -161,13 +161,13 @@ kubectl port-forward svc/fraud-alert-agent 8000:8000 -n fraud-agent
 In a second terminal, look up the alert by transaction ID:
 
 ```bash
-curl -s -H "X-API-Key: dev-test-key" http://localhost:8000/alerts/by-transaction/e2e-test-direct-001 | python3 -m json.tool
+curl -s -H "X-API-Key: $FRAUD_API_KEY" http://localhost:8000/alerts/by-transaction/e2e-test-direct-001 | python3 -m json.tool
 ```
 
 Or list all recent alerts:
 
 ```bash
-curl -s -H "X-API-Key: dev-test-key" "http://localhost:8000/alerts?page_size=5" | python3 -m json.tool
+curl -s -H "X-API-Key: $FRAUD_API_KEY" "http://localhost:8000/alerts?page_size=5" | python3 -m json.tool
 ```
 
 A completed alert will have `"status": "completed"` and a non-empty `"final_action"`
