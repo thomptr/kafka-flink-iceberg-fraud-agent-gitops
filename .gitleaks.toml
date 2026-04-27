@@ -5,3 +5,4 @@ useDefault = true
 description = "Shell variable references in documentation are not secrets"
 regexes = ['''--from-literal=[\w-]+="\$[A-Z_]+"''']
 paths = ['''src/streamlit-ui/\.streamlit/secrets\.toml''']
+commits = ["7084f21"]  # placeholder dev-test-key in docs/end-to-end-test.md; replaced in fd719e7
