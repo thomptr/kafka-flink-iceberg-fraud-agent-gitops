@@ -43,9 +43,12 @@ def explain_fraud_flag(
     # fraction (0.995); normalise to fraction before :.2% formatting.
     score_fraction = fraud_score / 100.0 if fraud_score > 1.0 else fraud_score
     system_msg = (
-        f"Given this transaction details, user history, and model probability of "
-        f"{score_fraction:.2%}, provide a clear, concise reason why it was flagged as "
-        f"fraud. Highlight anomalies."
+        f"Given this transaction details, user history, and model fraud probability of "
+        f"{score_fraction:.2%}, provide a clear, concise explanation of why it was flagged as fraud. "
+        f"Highlight specific anomalies. "
+        f"If user_history has transaction_count of 0 or is otherwise sparse, note that as context "
+        f"and base the explanation on the transaction details and high fraud probability alone — "
+        f"a new or unrecognised user is itself a risk signal."
     )
     user_msg = json.dumps({"transaction": tx_dict, "user_history": history_dict}, default=str)
     messages = [

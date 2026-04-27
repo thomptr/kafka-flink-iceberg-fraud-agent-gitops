@@ -163,6 +163,29 @@ Common causes and which scenario to follow:
 
 ### Step 3 — Restart the jobs
 
+**Before bumping the nonce, confirm the root cause is resolved.** If you restart the jobs while Polaris is still cycling, they will fail again immediately and you will waste a nonce value. Verify Polaris is reachable from the `flink-system` namespace:
+
+```bash
+kubectl --context=fraud-gitops run polaris-check --rm -i --restart=Never \
+  --image=curlimages/curl:8.7.1 -n flink-system -- \
+  curl -sf http://polaris.polaris.svc.cluster.local:8181/api/catalog/v1/namespaces
+```
+
+A JSON response (even a 401) means DNS and TCP are working. A `Could not resolve host` or connection-refused error means Polaris is still down — wait and retry.
+
+You can also confirm the catalog init job completed cleanly:
+
+```bash
+kubectl --context=fraud-gitops get cronjobs,jobs -n polaris
+kubectl --context=fraud-gitops logs -n polaris \
+  $(kubectl --context=fraud-gitops get pods -n polaris -l job-name --sort-by=.metadata.creationTimestamp \
+    -o jsonpath='{.items[-1].metadata.name}') 2>/dev/null | tail -5
+```
+
+Expected last line: `[ok] Polaris catalog 'quickstart_catalog' is ready for Iceberg`.
+
+---
+
 Check current nonce values to know what to increment to:
 
 ```bash
@@ -184,6 +207,8 @@ kubectl --context=fraud-gitops patch flinkdeployment -n flink-system fraud-score
 kubectl --context=fraud-gitops patch flinkdeployment -n flink-system fraud-score-kafka-publisher \
   --type merge -p "{\"spec\":{\"restartNonce\":$NONCE}}"
 ```
+
+**If jobs immediately re-FAIL after the nonce bump**, Polaris was still recovering when the restart fired. Wait for Polaris to stabilise (check with the `polaris-check` pod above), then bump the nonce again to the next value and retry.
 
 ### Step 4 — Verify recovery
 

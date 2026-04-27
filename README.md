@@ -1,176 +1,229 @@
-# FluxCD GitOps Monorepo for Minikube
+# Kafka → Flink → Iceberg Fraud Detection Platform
 
-This repository is a public GitOps monorepo for a Minikube-based local platform.
-It uses FluxCD to reconcile shared infrastructure and workloads from a single
-source of truth while keeping plaintext secrets, private keys, and passwords out
-of Git.
+A GitOps-managed, locally-runnable fraud detection platform built on Minikube. The system ingests synthetic payment transactions, scores them with a streaming XGBoost model via Apache Flink, and feeds scored events to an autonomous LangGraph multi-agent pipeline that investigates, classifies, and archives each fraud alert — end-to-end without human involvement unless escalation is required. All infrastructure, applications, and reconciliation order are managed by FluxCD from a single Git repository.
 
-```sh
-minikube start --profile fraud-gitops \
-  --cpus 8 \
-  --memory 16384 \
-  --disk-size 80g \
-  --driver docker \
-  --container-runtime docker \
-  --gpus all
+**Key capabilities:**
+
+- Real-time transaction scoring at stream speed via Flink + Iceberg (Polaris catalog on MinIO)
+- Autonomous 7-node LangGraph investigation pipeline driven by Ollama (llama3.1:8b) with durable PostgreSQL checkpoints
+- Event-driven alert ingestion from Kafka with sub-5s lag from score to investigation start
+- Analyst-facing Streamlit UI for reviewing, approving, and overriding agent decisions
+- Full distributed trace per investigation via OpenTelemetry → Grafana Tempo
+- Analytics-ready `fraud.investigations` Iceberg table partitioned by month for historical querying
+- P95 investigation time under 60 seconds including LLM inference
+
+---
+
+## Technology Stack
+
+| Category | Technology | Role |
+|---|---|---|
+| **GitOps** | FluxCD | Reconciles all manifests from `clusters/minikube`; enforces `infra-controllers → infra-configs → apps` order |
+| **Local Kubernetes** | Minikube | Single-node cluster; Docker driver; GPU-optional for Ollama |
+| **Manifest layering** | Kustomize | Base/overlay pattern for all workloads |
+| **Event streaming** | Apache Kafka (Strimzi) | `transactions`, `scored-transactions`, `fraud-alert-events`, `fraud-notifications` topics |
+| **Stream processing** | Apache Flink (Flink Kubernetes Operator) | XGBoost ModelScorerJob + streaming SQL publisher |
+| **Open table format** | Apache Iceberg | `transactions`, `transactions_scored`, `fraud.investigations` tables |
+| **Iceberg catalog** | Apache Polaris | REST catalog backed by MinIO; OAuth2 credentials for Flink |
+| **Object storage** | MinIO | S3-compatible store for Iceberg data files and MLflow artifacts |
+| **LLM inference** | Ollama | Local llama3.1:8b; GPU-tolerant deployment; no external API calls |
+| **ML model registry** | MLflow | XGBoost model versioning and provenance for analysis_node |
+| **ML platform** | Kubeflow | Notebooks, pipelines, and KServe endpoint hosting |
+| **Fraud scoring model** | XGBoost | Offline-trained; served by Flink ModelScorerJob |
+| **Agent framework** | LangGraph | 7-node stateful investigation graph with PostgresSaver checkpointing |
+| **Agent tooling** | LangChain | 7 registered tools: transaction history, feature context, pattern lookup, explanation, and more |
+| **API service** | FastAPI | `/api/v1` endpoints for alerts, investigations, decisions, sessions; `/healthz`; `/metrics` |
+| **Analyst UI** | Streamlit | Chat-style investigation review and decision override interface |
+| **Alert persistence** | PostgreSQL 15 | `FraudAlert`, `Investigation`, `InvestigationStep`, `DecisionEvent` tables + LangGraph checkpoints |
+| **DB migrations** | Alembic | Schema versioning for the fraud-agent Postgres database |
+| **Metrics** | Prometheus | Scrapes FastAPI `/metrics` and infrastructure components |
+| **Dashboards** | Grafana | Fraud alert dashboard; Iceberg latency panels; trace integration |
+| **Distributed tracing** | OpenTelemetry Collector | Receives OTLP spans from the fraud-alert-agent; forwards to Tempo |
+| **Trace storage** | Grafana Tempo | 72-hour trace retention; linked from Grafana |
+| **Notifications** | Slack Webhook | Escalation alerts from `escalation_node` |
+| **Tracing (optional)** | LangSmith | Remote LangGraph trace export; enabled via `LANGCHAIN_API_KEY` env var |
+
+---
+
+## Architecture
+
+### End-to-End System Flow
+
+```mermaid
+flowchart TD
+    synth["Synthetic Transaction Producer\nPOST /inject & /inject/scored"]
+    kafka-txns[("Kafka: transactions")]
+    flink-enricher["Flink: fraud-score-enricher\nXGBoost ModelScorerJob"]
+    iceberg-scored[("Iceberg: transactions_scored\nPolaris catalog")]
+    flink-publisher["Flink: fraud-score-kafka-publisher\nstreaming SQL"]
+    kafka-scored[("Kafka: scored-transactions\npartitions=3")]
+    alert-monitor["alert_monitor\nAIOKafkaConsumer\ngroup=fraud-alert-agent"]
+    langgraph["LangGraph 7-Node Graph\nPostgresSaver checkpoint"]
+
+    postgres[("Postgres 15\nFraudAlert + Investigation\n+ InvestigationStep + DecisionEvent")]
+    iceberg-inv[("Iceberg: fraud.investigations\nMonthTransform partition")]
+    kafka-alerts[("Kafka: fraud-alert-events")]
+    kafka-notifs[("Kafka: fraud-notifications")]
+    slack["Slack\nWebhook"]
+    mlflow["MLflow\nModel Registry"]
+    ollama["Ollama\nllama3.1:8b"]
+    fastapi["FastAPI Service\n/api/v1 + /healthz + /metrics"]
+    grafana["Grafana\nFraud Alert Dashboard"]
+    otel["OTel Collector\nflowd-agent:4317"]
+    tempo["Grafana Tempo\ntrace storage :3200"]
+
+    synth --> kafka-txns
+    kafka-txns --> flink-enricher
+    flink-enricher --> iceberg-scored
+    iceberg-scored --> flink-publisher
+    flink-publisher --> kafka-scored
+    kafka-scored --> alert-monitor
+    alert-monitor --> langgraph
+    langgraph --> postgres
+    langgraph --> iceberg-inv
+    langgraph --> kafka-alerts
+    langgraph --> kafka-notifs
+    langgraph --> slack
+    mlflow --> langgraph
+    ollama --> langgraph
+    postgres --> fastapi
+    fastapi --> grafana
+    langgraph --> otel
+    otel --> tempo
+    tempo --> grafana
 ```
 
-```sh
-minikube start --profile fraud-gitops \
-  --cpus 8 \
-  --memory 16384 \
-  --disk-size 80g \
-  --driver docker \
-  --container-runtime docker \
-  --gpus all
+| Component | Technology | Purpose |
+|---|---|---|
+| Synthetic Transaction Producer | Python + aiohttp | Generates test transactions; `POST /inject/scored` for direct fraud investigation testing |
+| Kafka: transactions | Strimzi | Raw transaction stream |
+| fraud-score-enricher | Flink (ModelScorerJob) | XGBoost scoring; writes to `transactions_scored` Iceberg |
+| Iceberg: transactions_scored | Polaris REST catalog | Source of truth for scored transactions |
+| fraud-score-kafka-publisher | Flink SQL (streaming) | Incremental Iceberg → Kafka fan-out |
+| Kafka: scored-transactions | Strimzi (3 partitions) | Event-driven feed for alert_monitor |
+| alert_monitor | AIOKafkaConsumer | Consumes scored-transactions; creates alerts; launches investigations |
+| LangGraph 7-Node Graph | LangGraph + PostgresSaver | Investigation pipeline with durable checkpoints |
+| Postgres 15 | K8s StatefulSet | Alert/investigation/decision persistence + LangGraph checkpoints |
+| Iceberg: fraud.investigations | Polaris REST catalog | Analytics-ready investigation archive (MonthTransform) |
+| OTel Collector | otel/opentelemetry-collector-contrib | Receives OTLP spans from app, forwards to Tempo |
+| Grafana Tempo | grafana/tempo | Distributed trace storage (72h retention) |
+
+### LangGraph 7-Node Investigation Graph
+
+```mermaid
+flowchart TD
+    START --> supervisor["supervisor_node\nDeterministic routing\n(fraud_probability thresholds)"]
+    supervisor -- "CRITICAL / STANDARD" --> triage["triage_node\nSeverity + SLA deadline"]
+    supervisor -- "MONITOR_ONLY" --> triage
+    supervisor -- "FALSE_POSITIVE" --> escalation
+
+    triage -- "CRITICAL / STANDARD" --> data_query["data_query_node\nasyncio.gather:\ntransaction_history\nfeature_context\npattern_lookup"]
+    triage -- "MONITOR_ONLY" --> escalation
+
+    data_query --> analysis["analysis_node\nLLaMA 3.1:8b\nMLflow provenance\nevidence + recommendation"]
+    analysis --> recommendation["recommendation_node\nRule-based:\nblock / notify / escalate"]
+    recommendation --> escalation["escalation_node\nSlack notification\nKafka: fraud-alert-events"]
+    escalation --> report["report_node\nIceberg: fraud.investigations\nKafka: fraud-notifications"]
+    report --> END
 ```
 
-## Stack
+| Node | LLM | Iceberg | MLflow | Kafka | Key outputs |
+|---|---|---|---|---|---|
+| supervisor_node | — | — | — | — | `route` |
+| triage_node | — | — | — | — | `severity`, `sla_deadline` |
+| data_query_node | — | Read (3 tables) | — | — | `transaction_history`, `feature_values`, `pattern_stats`, `snapshot_ids` |
+| analysis_node | LLaMA 3.1:8b | — | Yes | — | `explanation`, `evidence`, `recommended_action`, `confidence` |
+| recommendation_node | — | — | — | — | `final_action`, `rule_matched` |
+| escalation_node | — | — | — | Write: fraud-alert-events | `kafka_delivered` |
+| report_node | — | Write: fraud.investigations | — | Write: fraud-notifications | `iceberg_snapshot_id`, `kafka_delivered` |
 
-- FluxCD
-- MinIO
-- Apache Polaris catalog
-- Strimzi Kafka
-- Flink Kubernetes Operator
-- Kubeflow core controllers for the dashboard and notebooks
-- MLflow
-- Prometheus
-- Grafana
-- **Ollama** — local LLM inference (llama3.1:8b), deployed to the `ollama` namespace with GPU toleration
-- **Fraud Alert Agent** — 7-node LangGraph multi-agent pipeline: event-driven Kafka consumer (`alert_monitor`) → LLM investigation → `fraud.investigations` Iceberg table; 7 registered LangChain tools; Flink `fraud-score-kafka-publisher` publishes `transactions_scored` → `scored-transactions` Kafka topic
+---
+
+## Documentation
+
+### Setup
+
+| Document | Description |
+|---|---|
+| [Installation](docs/installation.md) | Step-by-step: Minikube start, credentials, cluster secrets, image builds, and Flux bootstrap |
+| [Bootstrap Runbook](docs/runbooks/bootstrap.md) | Minikube sizing, GPU options, Flux bootstrap, reconciliation order, and troubleshooting |
+| [Secret Management](docs/runbooks/secret-management.md) | How secrets are handled in this public repo; kubectl patterns; SOPS guidance |
+| [FluxCD Commands](docs/FLUX.md) | Common FluxCD CLI commands for reconciliation, suspension, and debugging |
+
+### Testing & Verification
+
+| Document | Description |
+|---|---|
+| [End-to-End Test](docs/end-to-end-test.md) | Full pipeline verification: inject transaction → score → alert → investigation → decision |
+| [Verify Kafka → Flink → Iceberg](docs/runbooks/verify-kafka-flink-iceberg.md) | Step-by-step checks for the streaming path from Kafka through Flink into the Polaris catalog |
+
+### Component References
+
+| Document | Description |
+|---|---|
+| [Architecture](docs/architecture.md) | Full system flow diagrams, Kafka topic schema, and Iceberg table layout |
+| [Fraud Score Enricher](docs/FRAUD_SCORE_ENRICHER.md) | Flink XGBoost ModelScorerJob: model loading, scoring logic, and Iceberg output |
+| [Flink Operations](docs/FLINK.md) | Flink SQL, job submission, and operator patterns used in this repo |
+| [Kubeflow on Minikube](docs/KUBEFLOW.md) | Kubeflow installation details, notebook setup, and pipeline authoring |
+| [MLOps Pipeline Runbook](docs/mlops-pipeline-runbook.md) | Training pipeline, model promotion, and MLflow integration |
+
+### Runbooks
+
+| Document | Description |
+|---|---|
+| [Runbooks Index](docs/runbooks/README.md) | Overview of all operational runbooks |
+| [Fraud Alert Agent](docs/runbooks/fraud-alert-agent.md) | Operations: health checks, investigation procedures, alert lifecycle |
+| [Reconciliation & Rollback](docs/runbooks/reconciliation.md) | FluxCD reconciliation order, suspension, and rollback procedures |
+| [Flink Job Recovery](docs/runbooks/flink-job-recovery.md) | Recovering Flink jobs from savepoints and handling failures |
+| [Flink Checkpoints](docs/runbooks/flink-checkpoints.md) | Checkpoint and savepoint configuration on MinIO (S3A) |
+| [Grafana Dashboards](docs/runbooks/grafana-dashboards.md) | Dashboard provisioning and the streaming pipeline panels |
+
+---
 
 ## Repository Layout
 
 ```text
-clusters/
-infrastructure/
+clusters/          # Flux entrypoint and Kustomization reconciliation order
+infrastructure/    # Shared platform controllers and cluster-wide config
 apps/
-  base/fraud-alert-agent/      # K8s manifests: deployment, postgres, configmap, tempo, otel-collector
-  base/fraud-investigation-ui/ # K8s manifests: Streamlit investigation UI deployment + service
-  base/ollama/                 # Ollama GPU deployment + llama3.1:8b pull Job
-  minikube/fraud-alert-agent/
-  minikube/fraud-investigation-ui/
-  minikube/ollama/
+  base/            # Workload manifests: fraud-alert-agent, flink-jobs, ollama, kafka, etc.
+  minikube/        # Minikube-specific overlays
 src/
-  fraud-alert-agent/           # FastAPI service + LangGraph agents + tools
-  streamlit-ui/                # Analyst investigation chat UI (Streamlit)
-docs/
-  architecture.md              # End-to-end system flow and LangGraph node diagrams
-  runbooks/
-    fraud-alert-agent.md       # Operations runbook (includes investigation session procedures)
-specs/
-  004-fraud-alert-agent/       # Feature spec, plan, tasks, quickstart
-  005-fraud-investigation-agent/ # Investigation agent spec, plan, tasks, quickstart
-scripts/
+  fraud-alert-agent/   # FastAPI service + LangGraph agents + LangChain tools
+  streamlit-ui/        # Analyst investigation chat UI
+docs/              # Architecture diagrams, runbooks, and component references
+specs/             # Feature specs, implementation plans, and task lists
+scripts/           # Utility and verification scripts
 ```
-
-- `clusters/minikube/` contains the Flux entrypoint and reconciliation order.
-- `infrastructure/` contains shared platform controllers and cluster-wide config.
-- `apps/` contains workload-level definitions such as MLflow and sample Flink jobs.
-- `src/` contains application source code separate from Flux/GitOps YAML.
-
-## Fraud Alert Agent — Usage
-
-### Local dev quickstart
-
-```bash
-cd src/fraud-alert-agent
-docker compose up -d postgres
-pip install -e ".[dev]"
-alembic upgrade head
-uvicorn app.main:app --reload --port 8000
-```
-
-### Minikube deploy
-
-```bash
-eval $(minikube docker-env -p fraud-gitops)
-docker build -t fraud-alert-agent:0.1.0 src/fraud-alert-agent/
-kubectl apply -k apps/minikube/fraud-alert-agent/
-kubectl apply -k apps/minikube/ollama/
-```
-
-### Benefits
-
-- 80%+ of fraud alerts fully investigated before an analyst opens them
-- P95 investigation time < 60 seconds end-to-end including Ollama inference
-- Complete LangGraph trace log per investigation (node, tool, LLM events) for auditability
-- Event-driven Kafka consumer (sub-5s alert lag) replaces polling
-- LangSmith remote tracing opt-in via single env var for production debugging
-- Iceberg `fraud.investigations` table enables SQL analytics over historical investigation data
-
-### End-to-End Demo
-
-```bash
-# Port-forwards
-kubectl port-forward svc/fraud-alert-agent -n fraud-agent 8000:8000 &
-kubectl port-forward svc/synthetic-transaction-producer -n kafka 8080:8080 &
-
-# 1. Inject a high-probability scored transaction
-curl -X POST http://localhost:8080/inject/scored \
-  -H "Content-Type: application/json" \
-  -d '{"user_id": 99999, "amount": 8500.00, "fraud_probability": 0.95, "merchant": "Test Fraud Merchant", "distance_from_home_km": 450.0}'
-
-# 2. Poll for alert (~5s)
-curl -H "X-API-Key: $API_KEY" "http://localhost:8000/api/v1/alerts?severity=critical&status=open"
-
-# 3. Watch investigation complete (~60s)
-curl -H "X-API-Key: $API_KEY" "http://localhost:8000/api/v1/alerts/{ALERT_ID}/investigation"
-
-# 4. Approve/override
-curl -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  "http://localhost:8000/api/v1/alerts/{ALERT_ID}/decisions" \
-  -d '{"actor": "demo@example.com", "action": "approve", "outcome": "block"}'
-
-# 5. View trace logs
-kubectl logs -n fraud-agent deploy/fraud-alert-agent | grep node_end
-```
-
-See [`docs/architecture.md`](docs/architecture.md) for system diagrams and [`specs/004-fraud-alert-agent/quickstart.md`](specs/004-fraud-alert-agent/quickstart.md) for full integration scenarios.
 
 ## Public Repo Rules
 
-- Do not commit plaintext `Secret` manifests.
-- Do not commit kubeconfigs, tokens, passwords, TLS private keys, or `.env` files.
-- For local Minikube work, create Kubernetes secrets directly in the cluster with
-  `kubectl create secret` and keep them out of Git.
-- SOPS or external secret managers are optional future enhancements, not required
-  for the local workflow.
+- Do not commit plaintext `Secret` manifests, kubeconfigs, tokens, passwords, TLS private keys, or `.env` files.
+- Create Kubernetes secrets directly in the cluster with `kubectl create secret` and keep them out of Git.
+- SOPS or external secret managers are optional future enhancements.
 
-## Quick Start
+## Screenshots
 
-1. Start Minikube with the documented sizing profile.
-2. Run `make validate` to render and lint all Flux-managed paths.
-3. Bootstrap Flux to `clusters/minikube`.
-4. Create the required Kubernetes secrets locally in Minikube.
-5. Verify `infra-controllers`, `infra-configs`, and `apps` reconcile in order.
-6. Port-forward Apache Polaris and MinIO, then run `scripts/verify_polaris_pyiceberg.py` (install `pyiceberg`, `pyarrow`, and `boto3`; set `POLARIS_S3_ACCESS_KEY_ID` / `POLARIS_S3_SECRET_ACCESS_KEY` to MinIO keys unless you enable vended credentials with `POLARIS_USE_VENDED_CREDENTIALS=1`). The script creates the `iceberg-warehouse` bucket if missing.
+**Fraud Investigation UI**
+![Fraud Investigation UI](./docs/screenshots/fraud-investigation-ui.png)
 
-For the local Minikube workflow, Kubeflow is enabled as a pinned core install.
-Heavier add-ons such as Pipelines, KServe, Katib, and Spark Operator remain out
-of the active controller path so the Flink-first platform can stay lighter.
+**Flink Dashboard**
+![Flink Dashboard](./docs/screenshots/flink_dashboard.png)
 
-See `docs/runbooks/bootstrap.md` for the operator workflow and
-`docs/runbooks/secret-management.md` for secret handling.
+**Kafka UI**
+![Kafka UI](./docs/screenshots/kafka-ui.png)
 
-For the Kafka → Flink SQL → Iceberg (Polaris) streaming path on Minikube, use
-`specs/002-e2e-streaming-pipeline/quickstart.md` after Flux and local secrets are applied.
+**MinIO Object Store**
+![MinIO Object Store](./docs/screenshots/minIO-object-store.png)
 
-## User interfaces
+**MLflow Experiments**
+![MLflow Experiments](./docs/screenshots/mlflow-experiements.png)
 
-Flink
-```sh
-kubectl --context=fraud-gitops -n flink-system port-forward svc/sample-fraud-stream-rest 8081:8081
-```
+**Kubeflow Experiments**
+![Kubeflow Experiments](./docs/screenshots/kubeflow-experiments.png)
 
-MinIO
-```sh
-kubectl --context=fraud-gitops -n minio port-forward svc/minio-console 9001:9001
-```
+**Kubeflow KServe Endpoint**
+![Kubeflow KServe Endpoint](./docs/screenshots/kubeflow-kserve-endpoint.png)
 
-KubeFlow
-```sh
-kubectl --context=fraud-gitops -n istio-system port-forward svc/istio-ingressgateway 8085:80
-```
-
-
+**k9s Namespaces**
+![k9s Namespaces](./docs/screenshots/k9s-namespaces.png)

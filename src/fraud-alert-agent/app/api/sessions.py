@@ -98,8 +98,12 @@ async def open_investigation_session(
 
     initial_prompt = (
         f"Explain why transaction {alert.transaction_id} was flagged as potentially fraudulent. "
-        f"Include the top risk signals and their supporting data values. "
-        f"The fraud probability score is {float(alert.fraud_probability):.2%}."
+        f"The fraud probability score is {float(alert.fraud_probability):.2%}. "
+        f"Follow these steps in order:\n"
+        f"1. Call get_transaction_details with transaction_id='{alert.transaction_id}'.\n"
+        f"2. Call get_user_history with user_id='{alert.user_id}'.\n"
+        f"3. Call explain_fraud_flag with the transaction data, user history, and "
+        f"fraud_score={float(alert.fraud_probability):.4f}."
     )
 
     t0 = time.perf_counter()
