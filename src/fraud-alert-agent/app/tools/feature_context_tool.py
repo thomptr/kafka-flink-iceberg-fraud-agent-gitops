@@ -1,6 +1,7 @@
 import structlog
 from langchain_core.tools import tool
 
+from app.config import settings
 from app.tools.iceberg_query_tool import query_iceberg_table
 
 log = structlog.get_logger(__name__)
@@ -11,7 +12,7 @@ def fetch_feature_context(
 ) -> tuple[dict | None, int | None]:
     try:
         result = query_iceberg_table.invoke({
-            "namespace": "fraud",
+            "namespace": settings.ICEBERG_INVESTIGATIONS_NAMESPACE,
             "table_name": "transactions_scored",
             "row_filter": f"transaction_id = '{transaction_id}'",
             "limit": 1,

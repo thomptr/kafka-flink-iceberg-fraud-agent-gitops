@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import structlog
 from langchain_core.tools import tool
 
+from app.config import settings
 from app.tools.iceberg_query_tool import query_iceberg_table
 
 log = structlog.get_logger(__name__)
@@ -13,9 +14,9 @@ def fetch_pattern_stats(user_id: int) -> dict:
     try:
         thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         result = query_iceberg_table.invoke({
-            "namespace": "fraud",
+            "namespace": settings.ICEBERG_INVESTIGATIONS_NAMESPACE,
             "table_name": "transactions",
-            "row_filter": f"user_id = {user_id} AND event_time >= '{thirty_days_ago}'",
+            "row_filter": f"user_id = {user_id} AND ts >= '{thirty_days_ago}'",
             "limit": 1000,
         })
         rows = result["rows"]

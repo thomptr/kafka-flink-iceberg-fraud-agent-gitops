@@ -30,20 +30,20 @@ The Flink Kubernetes Operator marks a `FlinkDeployment` as `FAILED` after consec
 
 ### Fix
 
-Trigger a stateless restart for each job by bumping `spec.job.restartNonce` in the `FlinkDeployment`. The Flink operator detects the change and performs a clean restart using the current upgrade mode.
+Trigger a stateless restart for each job by bumping `spec.restartNonce` in the `FlinkDeployment`. The Flink operator detects the change and performs a clean restart using the current upgrade mode.
 
 **Important**: `fraud-score-enricher` uses `upgradeMode: stateless` (changed from `last-state` after this incident — see commit history). `sample-fraud-stream` uses `upgradeMode: last-state` and will restore from the latest checkpoint.
 
 ```bash
 # Re-trigger all three jobs
 kubectl patch flinkdeployment -n flink-system sample-fraud-stream \
-  --type merge -p '{"spec":{"job":{"restartNonce":1}}}'
+  --type merge -p '{"spec":{"restartNonce":1}}'
 
 kubectl patch flinkdeployment -n flink-system fraud-score-enricher \
-  --type merge -p '{"spec":{"job":{"restartNonce":1}}}'
+  --type merge -p '{"spec":{"restartNonce":1}}'
 
 kubectl patch flinkdeployment -n flink-system fraud-score-kafka-publisher \
-  --type merge -p '{"spec":{"job":{"restartNonce":1}}}'
+  --type merge -p '{"spec":{"restartNonce":1}}'
 ```
 
 Increment the nonce value each time you use this (1, 2, 3, …). FluxCD will reconcile the manifest back to the committed value within one sync interval (~10 min), but by then the jobs are running and FluxCD will find nothing to change.
@@ -176,13 +176,13 @@ Bump each nonce by 1 (if currently unset, use `1`; if currently `1`, use `2`, et
 NONCE=1   # increment from current value
 
 kubectl --context=fraud-gitops patch flinkdeployment -n flink-system sample-fraud-stream \
-  --type merge -p "{\"spec\":{\"job\":{\"restartNonce\":$NONCE}}}"
+  --type merge -p "{\"spec\":{\"restartNonce\":$NONCE}}"
 
 kubectl --context=fraud-gitops patch flinkdeployment -n flink-system fraud-score-enricher \
-  --type merge -p "{\"spec\":{\"job\":{\"restartNonce\":$NONCE}}}"
+  --type merge -p "{\"spec\":{\"restartNonce\":$NONCE}}"
 
 kubectl --context=fraud-gitops patch flinkdeployment -n flink-system fraud-score-kafka-publisher \
-  --type merge -p "{\"spec\":{\"job\":{\"restartNonce\":$NONCE}}}"
+  --type merge -p "{\"spec\":{\"restartNonce\":$NONCE}}"
 ```
 
 ### Step 4 — Verify recovery
@@ -194,6 +194,90 @@ kubectl --context=fraud-gitops get flinkdeployments -n flink-system -w
 All three should reach `RUNNING / STABLE` within 2–3 minutes. Refresh the Flink UI — jobs should appear in the **Running Jobs** tab.
 
 If a job stays in `RESTARTING` for more than 5 minutes, check the jobmanager pod logs for a new error and re-evaluate the root cause.
+
+---
+
+## Scenario 4 — Messages arrive in `transactions` but `scored-transactions` is empty
+
+### Symptoms
+
+The `transactions` Kafka topic is receiving messages but the `scored-transactions` topic produces nothing:
+
+```bash
+# Confirm transactions are flowing (expect 3 messages)
+kubectl --context=fraud-gitops exec -n kafka platform-cluster-kafka-0 -- \
+  bin/kafka-console-consumer.sh \
+  --bootstrap-server platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092 \
+  --topic transactions --from-beginning --max-messages 3 --timeout-ms 10000
+
+# Confirm scored-transactions is empty (expect timeout + "Processed a total of 0 messages")
+kubectl --context=fraud-gitops exec -n kafka platform-cluster-kafka-0 -- \
+  bin/kafka-console-consumer.sh \
+  --bootstrap-server platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092 \
+  --topic scored-transactions --from-beginning --max-messages 3 --timeout-ms 10000
+```
+
+### Pipeline overview
+
+The `scored-transactions` topic is the final output of a three-stage pipeline. All three jobs must be `RUNNING` for messages to flow end to end:
+
+```
+transactions (Kafka)
+  → sample-fraud-stream          reads Kafka, writes raw+enriched rows to Iceberg transactions table
+  → fraud-score-enricher         ModelScorerJob: reads Iceberg transactions, appends fraud_probability, writes to Iceberg transactions_scored table
+  → fraud-score-kafka-publisher  reads Iceberg transactions_scored (streaming), publishes to scored-transactions Kafka topic
+```
+
+If `fraud-score-enricher` is FAILED, the `transactions_scored` Iceberg table receives no new rows, so `fraud-score-kafka-publisher` has nothing to publish even if it is running.
+
+### Diagnosis
+
+Check all three job states:
+
+```bash
+kubectl --context=fraud-gitops get flinkdeployments -n flink-system
+```
+
+Any job showing `FAILED` breaks the pipeline at that stage. Use **Scenario 3 → Step 2** log inspection to identify the root cause for each failed job, then apply the appropriate fix.
+
+### Fix
+
+Restart every FAILED job. First check current nonce values:
+
+```bash
+kubectl --context=fraud-gitops get flinkdeployments -n flink-system \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" nonce="}{.spec.restartNonce}{"\n"}{end}'
+```
+
+Patch only the FAILED jobs, incrementing the nonce from its current value (use `1` if unset):
+
+```bash
+NONCE=1   # increment from current value
+
+# Only patch jobs that are FAILED — skip any that are already RUNNING
+kubectl --context=fraud-gitops patch flinkdeployment -n flink-system fraud-score-enricher \
+  --type merge -p "{\"spec\":{\"restartNonce\":$NONCE}}"
+
+kubectl --context=fraud-gitops patch flinkdeployment -n flink-system fraud-score-kafka-publisher \
+  --type merge -p "{\"spec\":{\"restartNonce\":$NONCE}}"
+```
+
+Wait for both jobs to reach `RUNNING / STABLE`:
+
+```bash
+kubectl --context=fraud-gitops get flinkdeployments -n flink-system -w
+```
+
+Allow 1–2 minutes for the scoring backlog to drain, then confirm messages are flowing:
+
+```bash
+kubectl --context=fraud-gitops exec -n kafka platform-cluster-kafka-0 -- \
+  bin/kafka-console-consumer.sh \
+  --bootstrap-server platform-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092 \
+  --topic scored-transactions --from-beginning --max-messages 3 --timeout-ms 15000
+```
+
+Expected output: three JSON records each containing a `fraud_probability` field.
 
 ---
 

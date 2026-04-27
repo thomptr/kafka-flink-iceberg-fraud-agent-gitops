@@ -5,6 +5,7 @@ from typing import TypedDict
 import structlog
 from langchain_core.tools import tool
 
+from app.config import settings
 from app.tools.iceberg_query_tool import query_iceberg_table
 from app.tools.pii_masking import mask_pii
 
@@ -54,7 +55,7 @@ def get_user_history(user_id: str, days: int = 90) -> UserHistoryResult:
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         result = query_iceberg_table.invoke({
-            "namespace": "fraud",
+            "namespace": settings.ICEBERG_INVESTIGATIONS_NAMESPACE,
             "table_name": "transactions",
             "row_filter": f"user_id = {int(user_id)} AND ts >= '{cutoff.isoformat()}'",
             "limit": 5000,

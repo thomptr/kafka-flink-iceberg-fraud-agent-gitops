@@ -3,6 +3,7 @@ from typing import TypedDict
 import structlog
 from langchain_core.tools import tool
 
+from app.config import settings
 from app.tools.iceberg_catalog import load_table
 from app.tools.pii_masking import mask_pii
 
@@ -19,14 +20,14 @@ class TransactionDetailsResult(TypedDict):
 
 @tool
 def get_transaction_details(transaction_id: str) -> TransactionDetailsResult:
-    """Look up a specific transaction by ID from the fraud.transactions Iceberg table.
+    """Look up a specific transaction by ID from the Iceberg transactions table.
 
     Returns the transaction row, the current snapshot metadata, and recent snapshot
     history for time-travel context. Use this when the analyst asks about a specific
     transaction by ID, or asks what snapshot or point-in-time the data comes from.
     """
     try:
-        table = load_table("fraud", "transactions")
+        table = load_table(settings.ICEBERG_INVESTIGATIONS_NAMESPACE, "transactions")
 
         scan = table.scan(
             row_filter=f"transaction_id = '{transaction_id}'",

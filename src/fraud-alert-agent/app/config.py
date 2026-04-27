@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     ICEBERG_CATALOG_URI: str = "http://localhost:8181/api/catalog"
     ICEBERG_WAREHOUSE: str = "quickstart_catalog"
-    ICEBERG_INVESTIGATIONS_NAMESPACE: str = "fraud"
+    ICEBERG_INVESTIGATIONS_NAMESPACE: str = "default"
     POLARIS_CREDENTIAL: str = ""
     MINIO_ENDPOINT: str = "http://localhost:9000"
     AWS_ACCESS_KEY_ID: str = "minioadmin"

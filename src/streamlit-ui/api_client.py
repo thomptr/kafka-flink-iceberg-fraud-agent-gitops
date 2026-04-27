@@ -7,6 +7,7 @@ FRAUD_AGENT_BASE_URL = os.environ.get("FRAUD_AGENT_BASE_URL", "http://localhost:
 FRAUD_API_KEY = os.environ.get("FRAUD_API_KEY", "")
 ANALYST_ID = os.environ.get("ANALYST_ID", "analyst")
 ICEBERG_CATALOG_URI = os.environ.get("ICEBERG_CATALOG_URI", "")
+ICEBERG_INVESTIGATIONS_NAMESPACE = os.environ.get("ICEBERG_INVESTIGATIONS_NAMESPACE", "default")
 
 
 class SessionConflictError(Exception):
@@ -89,7 +90,7 @@ class FraudAgentClient:
                 uri=ICEBERG_CATALOG_URI,
                 warehouse=os.environ.get("ICEBERG_WAREHOUSE", "quickstart_catalog"),
             )
-            table = catalog.load_table("fraud.transactions")
+            table = catalog.load_table(f"{ICEBERG_INVESTIGATIONS_NAMESPACE}.transactions")
             scan = table.scan(row_filter=f"user_id = {user_id}", limit=limit)
             rows = []
             for batch in scan.to_arrow().to_batches():

@@ -89,7 +89,7 @@ async def healthz() -> JSONResponse:
 
     # Polaris / Iceberg
     try:
-        tables = list_iceberg_tables.invoke({"namespace": "fraud"})
+        tables = list_iceberg_tables.invoke({"namespace": settings.ICEBERG_INVESTIGATIONS_NAMESPACE})
         checks["polaris"] = "ok"
     except Exception as exc:
         checks["polaris"] = f"error: {exc}"
