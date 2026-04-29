@@ -51,7 +51,7 @@ A GitOps-managed, locally-runnable fraud detection platform built on Minikube. T
 
 ```mermaid
 flowchart TD
-    synth["Synthetic Transaction Producer\nPOST /inject & /inject/scored"]
+    synth["Synthetic Transaction Producer\ncontinuous Kafka stream"]
     kafka-txns[("Kafka: transactions")]
     flink-enricher["Flink: fraud-score-enricher\nXGBoost ModelScorerJob"]
     iceberg-scored[("Iceberg: transactions_scored\nPolaris catalog")]
@@ -95,7 +95,7 @@ flowchart TD
 
 | Component | Technology | Purpose |
 |---|---|---|
-| Synthetic Transaction Producer | Python + aiohttp | Generates test transactions; `POST /inject/scored` for direct fraud investigation testing |
+| Synthetic Transaction Producer | Python + aiohttp | Continuously generates realistic test transactions and publishes to the `transactions` Kafka topic |
 | Kafka: transactions | Strimzi | Raw transaction stream |
 | fraud-score-enricher | Flink (ModelScorerJob) | XGBoost scoring; writes to `transactions_scored` Iceberg |
 | Iceberg: transactions_scored | Polaris REST catalog | Source of truth for scored transactions |
