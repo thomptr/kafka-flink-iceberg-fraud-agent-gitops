@@ -53,7 +53,9 @@ A GitOps-managed, locally-runnable fraud detection platform built on Minikube. T
 flowchart TD
     synth["Synthetic Transaction Producer\ncontinuous Kafka stream"]
     kafka-txns[("Kafka: transactions")]
-    flink-enricher["Flink: fraud-score-enricher\nXGBoost ModelScorerJob"]
+    flink-stream["Flink: sample-fraud-stream\nKafka → Iceberg SQL"]
+    iceberg-txns[("Iceberg: transactions\nPolaris catalog")]
+    flink-enricher["Flink: fraud-score-enricher\nIceberg → KServe → Iceberg"]
     iceberg-scored[("Iceberg: transactions_scored\nPolaris catalog")]
     flink-publisher["Flink: fraud-score-kafka-publisher\nstreaming SQL"]
     kafka-scored[("Kafka: scored-transactions\npartitions=3")]
@@ -73,7 +75,9 @@ flowchart TD
     tempo["Grafana Tempo\ntrace storage :3200"]
 
     synth --> kafka-txns
-    kafka-txns --> flink-enricher
+    kafka-txns --> flink-stream
+    flink-stream --> iceberg-txns
+    iceberg-txns --> flink-enricher
     flink-enricher --> iceberg-scored
     iceberg-scored --> flink-publisher
     flink-publisher --> kafka-scored
@@ -97,7 +101,9 @@ flowchart TD
 |---|---|---|
 | Synthetic Transaction Producer | Python + aiohttp | Continuously generates realistic test transactions and publishes to the `transactions` Kafka topic |
 | Kafka: transactions | Strimzi | Raw transaction stream |
-| fraud-score-enricher | Flink (ModelScorerJob) | XGBoost scoring; writes to `transactions_scored` Iceberg |
+| sample-fraud-stream | Flink SQL (`flink_streaming_job.sql`) | Consumes `transactions` Kafka; writes Iceberg `transactions` |
+| Iceberg: transactions | Polaris REST catalog | Landing table for raw transactions before ML scoring |
+| fraud-score-enricher | Flink (ModelScorerJob) | Reads Iceberg `transactions` (streaming), calls KServe, writes `transactions_scored` |
 | Iceberg: transactions_scored | Polaris REST catalog | Source of truth for scored transactions |
 | fraud-score-kafka-publisher | Flink SQL (streaming) | Incremental Iceberg → Kafka fan-out |
 | Kafka: scored-transactions | Strimzi (3 partitions) | Event-driven feed for alert_monitor |

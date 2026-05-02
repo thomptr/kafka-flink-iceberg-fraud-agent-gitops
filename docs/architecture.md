@@ -6,7 +6,9 @@
 flowchart TD
     synth["Synthetic Transaction Producer\ncontinuous Kafka stream"]
     kafka-txns[("Kafka: transactions")]
-    flink-enricher["Flink: fraud-score-enricher\nXGBoost ModelScorerJob"]
+    flink-stream["Flink: sample-fraud-stream\nKafka → Iceberg SQL"]
+    iceberg-txns[("Iceberg: transactions\nPolaris catalog")]
+    flink-enricher["Flink: fraud-score-enricher\nIceberg → KServe → Iceberg"]
     iceberg-scored[("Iceberg: transactions_scored\nPolaris catalog")]
     flink-publisher["Flink: fraud-score-kafka-publisher\nstreaming SQL"]
     kafka-scored[("Kafka: scored-transactions\npartitions=3")]
@@ -26,7 +28,9 @@ flowchart TD
     tempo["Grafana Tempo\ntrace storage :3200"]
 
     synth --> kafka-txns
-    kafka-txns --> flink-enricher
+    kafka-txns --> flink-stream
+    flink-stream --> iceberg-txns
+    iceberg-txns --> flink-enricher
     flink-enricher --> iceberg-scored
     iceberg-scored --> flink-publisher
     flink-publisher --> kafka-scored
@@ -52,7 +56,9 @@ flowchart TD
 |-----------|------------|---------|
 | Synthetic Transaction Producer | Python + aiohttp | Continuously generates realistic test transactions and publishes to the `transactions` Kafka topic |
 | Kafka: transactions | Strimzi | Raw transaction stream |
-| fraud-score-enricher | Flink (ModelScorerJob) | XGBoost scoring; writes to `transactions_scored` Iceberg |
+| sample-fraud-stream | Flink SQL (`flink_streaming_job.sql`) | Consumes `transactions` Kafka; writes Iceberg `transactions` |
+| Iceberg: transactions | Polaris REST catalog | Landing table for raw transactions before ML scoring |
+| fraud-score-enricher | Flink (ModelScorerJob) | Reads Iceberg `transactions` (streaming), calls KServe, writes `transactions_scored` |
 | Iceberg: transactions_scored | Polaris REST catalog | Source of truth for scored transactions |
 | fraud-score-kafka-publisher | Flink SQL (streaming) | Incremental Iceberg → Kafka fan-out |
 | Kafka: scored-transactions | Strimzi (3 partitions) | Event-driven feed for alert_monitor |
@@ -104,7 +110,7 @@ flowchart TD
 
 | Topic | Producer | Consumer | Schema |
 |-------|----------|----------|--------|
-| `transactions` | Synthetic producer | Flink fraud-score-enricher | `{transaction_id, user_id, amount, merchant, lat, lon, ts}` |
+| `transactions` | Synthetic producer | Flink sample-fraud-stream | `{transaction_id, user_id, amount, merchant, lat, lon, ts}` |
 | `scored-transactions` | Flink fraud-score-kafka-publisher | alert_monitor | `{transaction_id, user_id, amount, merchant, fraud_probability, amount_velocity_5min, distance_from_home_km, ts, processing_time}` |
 | `fraud-alert-events` | escalation_node, sla_worker | Downstream | `{event_type, timestamp, source, payload: {alert_id, final_action, severity, ...}}` |
 | `fraud-notifications` | report_node | Downstream | `{event_type, timestamp, source, payload: {alert_id, final_action, iceberg_snapshot_id, investigation_id}}` |
@@ -113,7 +119,7 @@ flowchart TD
 
 | Table | Namespace | Writer | Partition |
 |-------|-----------|--------|-----------|
-| `transactions` | default | Flink SQL | date |
+| `transactions` | default | Flink sample-fraud-stream (`flink_streaming_job.sql`) | date |
 | `transactions_scored` | default | Flink ModelScorerJob | date |
 | `fraud.investigations` | fraud | report_node (PyIceberg) | MonthTransform on investigation_completed_at |
 
