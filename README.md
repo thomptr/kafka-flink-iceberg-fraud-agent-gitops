@@ -1,10 +1,10 @@
 # Kafka → Flink → Iceberg Fraud Detection Platform
 
-A GitOps-managed, locally-runnable fraud detection platform built on Minikube. The system ingests synthetic payment transactions, scores them with a streaming XGBoost model via Apache Flink, and feeds scored events to an autonomous LangGraph multi-agent pipeline that investigates, classifies, and archives each fraud alert — end-to-end without human involvement unless escalation is required. All infrastructure, applications, and reconciliation order are managed by FluxCD from a single Git repository.
+A GitOps-managed, locally-runnable fraud detection platform built on Minikube. The system ingests synthetic payment transactions, scores them in streaming fashion using Apache Flink (`ModelScorerJob` calls a KServe-hosted XGBoost inference endpoint per row), and feeds scored events to an autonomous LangGraph multi-agent pipeline that investigates, classifies, and archives each fraud alert — end-to-end without human involvement unless escalation is required. All infrastructure, applications, and reconciliation order are managed by FluxCD from a single Git repository.
 
 **Key capabilities:**
 
-- Real-time transaction scoring at stream speed via Flink + Iceberg (Polaris catalog on MinIO)
+- Real-time transaction scoring at stream speed via Flink (async HTTP to KServe), Iceberg reads/writes (Polaris catalog on MinIO)
 - Autonomous 7-node LangGraph investigation pipeline driven by Ollama (llama3.1:8b) with durable PostgreSQL checkpoints
 - Event-driven alert ingestion from Kafka with sub-5s lag from score to investigation start
 - Analyst-facing Streamlit UI for reviewing, approving, and overriding agent decisions
@@ -22,14 +22,14 @@ A GitOps-managed, locally-runnable fraud detection platform built on Minikube. T
 | **Local Kubernetes** | Minikube | Single-node cluster; Docker driver; GPU-optional for Ollama |
 | **Manifest layering** | Kustomize | Base/overlay pattern for all workloads |
 | **Event streaming** | Apache Kafka (Strimzi) | `transactions`, `scored-transactions`, `fraud-alert-events`, `fraud-notifications` topics |
-| **Stream processing** | Apache Flink (Flink Kubernetes Operator) | XGBoost ModelScorerJob + streaming SQL publisher |
+| **Stream processing** | Apache Flink (Flink Kubernetes Operator) | `ModelScorerJob` (Iceberg → KServe HTTP → Iceberg) + streaming SQL publisher |
 | **Open table format** | Apache Iceberg | `transactions`, `transactions_scored`, `fraud.investigations` tables |
 | **Iceberg catalog** | Apache Polaris | REST catalog backed by MinIO; OAuth2 credentials for Flink |
 | **Object storage** | MinIO | S3-compatible store for Iceberg data files and MLflow artifacts |
 | **LLM inference** | Ollama | Local llama3.1:8b; GPU-tolerant deployment; no external API calls |
 | **ML model registry** | MLflow | XGBoost model versioning and provenance for analysis_node |
 | **ML platform** | Kubeflow | Notebooks, pipelines, and KServe endpoint hosting |
-| **Fraud scoring model** | XGBoost | Offline-trained; served by Flink ModelScorerJob |
+| **Fraud scoring model** | XGBoost | Offline-trained on Kubeflow Pipelines; served by KServe (`fraud-detector` InferenceService); Flink `ModelScorerJob` invokes the KServe V2 infer API per transaction row |
 | **Agent framework** | LangGraph | 7-node stateful investigation graph with PostgresSaver checkpointing |
 | **Agent tooling** | LangChain | 7 registered tools: transaction history, feature context, pattern lookup, explanation, and more |
 | **API service** | FastAPI | `/api/v1` endpoints for alerts, investigations, decisions, sessions; `/healthz`; `/metrics` |
@@ -168,7 +168,7 @@ flowchart TD
 | Document | Description |
 |---|---|
 | [Architecture](docs/architecture.md) | Full system flow diagrams, Kafka topic schema, and Iceberg table layout |
-| [Fraud Score Enricher](docs/FRAUD_SCORE_ENRICHER.md) | Flink XGBoost ModelScorerJob: model loading, scoring logic, and Iceberg output |
+| [Fraud Score Enricher](docs/FRAUD_SCORE_ENRICHER.md) | Flink `ModelScorerJob`: Iceberg streaming source, async KServe V2 inference calls, Iceberg `transactions_scored` sink |
 | [Flink Operations](docs/FLINK.md) | Flink SQL, job submission, and operator patterns used in this repo |
 | [Kubeflow on Minikube](docs/KUBEFLOW.md) | Kubeflow installation details, notebook setup, and pipeline authoring |
 | [MLOps Pipeline Runbook](docs/mlops-pipeline-runbook.md) | Training pipeline, model promotion, and MLflow integration |
